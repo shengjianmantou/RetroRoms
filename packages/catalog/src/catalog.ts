@@ -46,6 +46,18 @@ export interface EditionRecordInput {
   contentSha256: string;
 }
 
+export interface ExportRecordInput {
+  editionId: string;
+  processedRootId: string;
+  relativePath: string;
+  outputPolicy: OutputPolicy;
+  packageFormat: string;
+  packageSha256: string;
+  contentManifest: unknown;
+}
+
+export type OutputPolicy = "auto" | "compressed" | "uncompressed" | "preserve";
+
 function now(): string {
   return new Date().toISOString();
 }
@@ -284,6 +296,29 @@ export class Catalog {
       ORDER BY g.sort_title, e.system_key
     `).all() as Array<{ id: string; gameId: string; title: string; seriesName: string | null; systemKey: string; region: string | null; revision: string | null; languagesJson: string; preferred: number; identitySource: string; contentSha256: string }>;
     return rows.map((row) => ({ ...row, languages: JSON.parse(row.languagesJson) as string[], preferred: row.preferred === 1 }));
+  }
+
+  findEditionByContentSha256(sha256: string): { id: string } | undefined {
+    return this.database.prepare("SELECT edition_id AS id FROM edition_content WHERE sha256 = ? LIMIT 1").get(sha256) as { id: string } | undefined;
+  }
+
+  findRoot(kind: RootKind, path: string): RootRecord | undefined {
+    const row = this.database.prepare("SELECT id, kind, path, display_name FROM roots WHERE kind = ? AND path = ?").get(kind, resolve(path)) as
+      | { id: string; kind: RootKind; path: string; display_name: string }
+      | undefined;
+    return row ? { id: row.id, kind: row.kind, path: row.path, displayName: row.display_name } : undefined;
+  }
+
+  recordExport(input: ExportRecordInput): void {
+    if (isAbsolute(input.relativePath) || input.relativePath.split("/").includes("..")) throw new Error(`Export path must be safe and relative: ${input.relativePath}`);
+    const timestamp = now();
+    this.database.prepare(`
+      INSERT INTO exports (id, edition_id, processed_root_id, relative_path, output_policy, package_format, package_sha256, content_manifest_json, exported_at, verified_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(processed_root_id, relative_path) DO UPDATE SET edition_id = excluded.edition_id, output_policy = excluded.output_policy,
+        package_format = excluded.package_format, package_sha256 = excluded.package_sha256, content_manifest_json = excluded.content_manifest_json,
+        exported_at = excluded.exported_at, verified_at = excluded.verified_at
+    `).run(randomUUID(), input.editionId, input.processedRootId, input.relativePath, input.outputPolicy, input.packageFormat, input.packageSha256, JSON.stringify(input.contentManifest), timestamp, timestamp);
   }
 
   findBySha256(sha256: string): Array<{ rootKind: RootKind; relativePath: string; virtualPath: string }> {

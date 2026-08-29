@@ -70,3 +70,15 @@ test("persists preferred editions and content links across upserts", () => {
   assert.equal(editions.find((edition) => edition.languages[0] === "zh")?.preferred, true);
   catalog.close();
 });
+
+test("records verified export history", () => {
+  const catalog = new Catalog(":memory:");
+  catalog.initialize();
+  const root = catalog.addRoot("processed", "/processed", "Processed");
+  const edition = catalog.upsertEdition({ canonicalTitle: "Game", sortTitle: "game", systemKey: "snes", languages: ["en"], identitySource: "filename", preferred: true, contentSha256: "c".repeat(64) });
+  catalog.recordExport({ editionId: edition.editionId, processedRootId: root.id, relativePath: "roms/snes/Game.sfc", outputPolicy: "uncompressed", packageFormat: "raw", packageSha256: "d".repeat(64), contentManifest: { sourceSha256: "c".repeat(64) } });
+  const row = catalog.database.prepare("SELECT package_format AS format, verified_at AS verifiedAt FROM exports").get() as { format: string; verifiedAt: string };
+  assert.equal(row.format, "raw");
+  assert.ok(row.verifiedAt);
+  catalog.close();
+});

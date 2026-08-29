@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { copyFile, mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
@@ -120,6 +121,12 @@ export async function createUiServer(options: UiServerOptions) {
             if (temporaryRoot) await new BsdtarArchiveTool().extractToFile(sourcePath, members[0], materialized, { maxArchiveListingBytes: 4_000_000, maxEntries: 100_000, maxEntryBytes: 2_000_000_000, maxExpandedBytes: 4_000_000_000, maxCompressionRatio: 200, maxDepth: 4, archiveCommandTimeoutMs: 120_000 });
             if (item.outputFormat === "raw") await copyFile(materialized, destination);
             else await execFileAsync("zip", ["-j", "-q", destination, materialized]);
+            const edition = catalog.findEditionByContentSha256(source.sha256);
+            const processedRootRecord = catalog.findRoot("processed", processedRoot);
+            if (edition && processedRootRecord) {
+              const packageSha256 = createHash("sha256").update(await readFile(destination)).digest("hex");
+              catalog.recordExport({ editionId: edition.id, processedRootId: processedRootRecord.id, relativePath: item.destinationRelativePath, outputPolicy: payload.profiles?.[source.system]?.outputPolicy ?? payload.policy ?? "auto", packageFormat: item.outputFormat, packageSha256, contentManifest: { sourceSha256: source.sha256, sourceVirtualPath: source.virtualPath } });
+            }
             results.push({ ...item, status: "exported" });
           } finally {
             if (temporaryRoot) await rm(temporaryRoot, { recursive: true, force: true });
