@@ -93,7 +93,7 @@ export async function ingestLibrary(request: IngestRequest): Promise<IngestSumma
           byteSize: content.size,
           ...content.hashes,
         });
-        curationObservations.push({ id: observationId, systemKey: content.virtualPath.split("/")[0] || "unknown", filename: basename(content.virtualPath.split("::").at(-1) ?? content.virtualPath), hashes: content.hashes });
+        curationObservations.push({ id: observationId, systemKey: content.virtualPath.includes("/") ? content.virtualPath.split("/")[0] : "unknown", filename: basename(content.virtualPath.split("::").at(-1) ?? content.virtualPath), hashes: content.hashes });
         observationHashes.set(observationId, content.hashes.sha256);
       }
     }
@@ -115,7 +115,7 @@ export async function ingestLibrary(request: IngestRequest): Promise<IngestSumma
           byteSize: content.size,
           ...content.hashes,
         });
-        curationObservations.push({ id: observationId, systemKey: content.virtualPath.split("/")[0] || "unknown", filename: basename(content.virtualPath.split("::").at(-1) ?? content.virtualPath), hashes: content.hashes });
+        curationObservations.push({ id: observationId, systemKey: content.virtualPath.includes("/") ? content.virtualPath.split("/")[0] : "unknown", filename: basename(content.virtualPath.split("::").at(-1) ?? content.virtualPath), hashes: content.hashes });
         observationHashes.set(observationId, content.hashes.sha256);
       }
     }

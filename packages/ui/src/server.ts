@@ -1,11 +1,11 @@
 import { createServer } from "node:http";
-import { copyFile, mkdir, readFile, stat } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
 import { basename, dirname, join, resolve } from "node:path";
 import { Catalog } from "@retroroms/catalog";
-import { createExportPlan, normalizeSeriesKey, parseReleaseFilename, type ExportCandidate } from "@retroroms/core";
+import { BsdtarArchiveTool, createExportPlan, normalizeSeriesKey, parseReleaseFilename, type ExportCandidate } from "@retroroms/core";
 
 const execFileAsync = promisify(execFile);
 
@@ -24,7 +24,7 @@ function observations(catalog: Catalog) {
   return catalog.listObservations().map((item) => {
     const release = parseReleaseFilename(item.virtualPath);
     const edition = editionsByHash.get(item.sha256);
-    const system = item.relativePath.split("/")[0] || "unknown";
+    const system = item.relativePath.includes("/") ? item.relativePath.split("/")[0] : "unknown";
     return {
       ...item,
       title: edition?.title || release.title || basename(item.relativePath),
@@ -103,9 +103,21 @@ export async function createUiServer(options: UiServerOptions) {
           if (!destination.startsWith(`${processedRoot}/`)) throw new Error("Unsafe export destination");
           try { await stat(destination); results.push({ ...item, status: "skipped", message: "Destination already exists" }); continue; } catch { /* create new destination */ }
           await mkdir(dirname(destination), { recursive: true });
-          if (item.outputFormat === "raw") await copyFile(sourcePath, destination);
-          else await execFileAsync("zip", ["-j", "-q", destination, sourcePath]);
-          results.push({ ...item, status: "exported" });
+          const members = source.virtualPath.split("::").slice(1);
+          const temporaryRoot = members.length ? await mkdtemp(join(processedRoot, ".rom-curator-export-")) : undefined;
+          const materialized = temporaryRoot ? join(temporaryRoot, "game.rom") : sourcePath;
+          try {
+            if (members.length > 1) {
+              results.push({ ...item, status: "skipped", message: "Nested archive export is not yet supported" });
+              continue;
+            }
+            if (temporaryRoot) await new BsdtarArchiveTool().extractToFile(sourcePath, members[0], materialized, { maxArchiveListingBytes: 4_000_000, maxEntries: 100_000, maxEntryBytes: 2_000_000_000, maxExpandedBytes: 4_000_000_000, maxCompressionRatio: 200, maxDepth: 4, archiveCommandTimeoutMs: 120_000 });
+            if (item.outputFormat === "raw") await copyFile(materialized, destination);
+            else await execFileAsync("zip", ["-j", "-q", destination, materialized]);
+            results.push({ ...item, status: "exported" });
+          } finally {
+            if (temporaryRoot) await rm(temporaryRoot, { recursive: true, force: true });
+          }
         }
         json(response, { results });
       } catch (error) {
