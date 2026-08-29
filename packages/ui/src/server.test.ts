@@ -20,6 +20,9 @@ test("serves catalog observations and export previews", async () => {
   assert.equal(preview.plan[0].outputFormat, "zip");
   const history = await (await fetch(`http://127.0.0.1:${port}/api/exports`)).json() as { exports: unknown[] };
   assert.equal(history.exports.length, 0);
+  const stats = await (await fetch(`http://127.0.0.1:${port}/api/stats`)).json() as { observationCount: number; preferredEditionCount: number };
+  assert.equal(stats.observationCount, 1);
+  assert.equal(stats.preferredEditionCount, 1);
   const profilePreview = await (await fetch(`http://127.0.0.1:${port}/api/export-preview`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids: [observations.observations[0].id], profiles: { unknown: { outputPolicy: "uncompressed" } } }) })).json() as { plan: Array<{ outputFormat: string }> };
   assert.equal(profilePreview.plan[0].outputFormat, "raw");
   const exported = await (await fetch(`http://127.0.0.1:${port}/api/export`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids: [observations.observations[0].id], policy: "uncompressed" }) })).json() as { results: Array<{ status: string; destinationRelativePath: string }> };

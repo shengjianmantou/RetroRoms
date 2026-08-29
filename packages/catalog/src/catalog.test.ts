@@ -81,5 +81,6 @@ test("records verified export history", () => {
   assert.equal(row.format, "raw");
   assert.ok(row.verifiedAt);
   assert.equal(catalog.listExports()[0]?.relativePath, "roms/snes/Game.sfc");
+  assert.equal(catalog.getStatistics().preferredEditionCount, 1);
   catalog.close();
 });

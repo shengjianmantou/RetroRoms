@@ -213,6 +213,17 @@ export class Catalog {
     return row.count;
   }
 
+  getStatistics(): { observationCount: number; curatedEditionCount: number; preferredEditionCount: number; verifiedEditionCount: number } {
+    const row = this.database.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM content_observations) AS observationCount,
+        (SELECT COUNT(*) FROM editions) AS curatedEditionCount,
+        (SELECT COUNT(*) FROM editions WHERE preferred = 1) AS preferredEditionCount,
+        (SELECT COUNT(*) FROM editions WHERE identity_source = 'dat') AS verifiedEditionCount
+    `).get() as { observationCount: number; curatedEditionCount: number; preferredEditionCount: number; verifiedEditionCount: number };
+    return row;
+  }
+
   listObservations(limit = 5_000): Array<{
     id: string;
     rootKind: RootKind;
