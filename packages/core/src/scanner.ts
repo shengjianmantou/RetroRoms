@@ -1,9 +1,12 @@
-import { opendir, readFile, realpath, stat } from "node:fs/promises";
+import { mkdtemp, open, opendir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
+import { tmpdir } from "node:os";
 import { ArchiveInspectionError, detectContainer, readGzip, readTar, readZip } from "./archive.ts";
-import { hashContent } from "./hash.ts";
+import { BsdtarArchiveTool, type ArchiveTool } from "./externalArchive.ts";
+import { hashContent, hashFile } from "./hash.ts";
 import {
   DEFAULT_SCAN_LIMITS,
+  type ContainerFormat,
   type DiscoveredContent,
   type ScanLimits,
   type ScanResult,
@@ -11,8 +14,11 @@ import {
 
 interface ScanState {
   result: ScanResult;
-  entriesSeen: number;
   expandedBytes: number;
+}
+
+export interface ScannerOptions {
+  archiveTool?: ArchiveTool;
 }
 
 function mergeLimits(overrides?: Partial<ScanLimits>): ScanLimits {
@@ -34,12 +40,18 @@ async function enumerateFiles(root: string): Promise<string[]> {
   return files.sort();
 }
 
-function warning(
-  state: ScanState,
-  sourcePath: string,
-  virtualPath: string,
-  error: unknown,
-): void {
+async function readHeader(path: string, length = 560): Promise<Buffer> {
+  const handle = await open(path, "r");
+  try {
+    const buffer = Buffer.alloc(length);
+    const { bytesRead } = await handle.read(buffer, 0, length, 0);
+    return buffer.subarray(0, bytesRead);
+  } finally {
+    await handle.close();
+  }
+}
+
+function addWarning(state: ScanState, sourcePath: string, virtualPath: string, error: unknown): void {
   const known = error instanceof ArchiveInspectionError;
   state.result.warnings.push({
     sourcePath,
@@ -49,7 +61,48 @@ function warning(
   });
 }
 
-function inspectContent(
+function registerExpansion(state: ScanState, size: number): void {
+  state.expandedBytes += size;
+}
+
+function recordBuffer(state: ScanState, sourcePath: string, virtualPath: string, data: Buffer, chain: string[]): void {
+  const item: DiscoveredContent = {
+    sourcePath,
+    virtualPath,
+    containerChain: chain,
+    size: data.length,
+    hashes: hashContent(data),
+  };
+  state.result.content.push(item);
+}
+
+async function recordFile(
+  state: ScanState,
+  physicalPath: string,
+  sourcePath: string,
+  virtualPath: string,
+  chain: string[],
+  size: number,
+): Promise<void> {
+  registerExpansion(state, size);
+  state.result.content.push({
+    sourcePath,
+    virtualPath,
+    containerChain: chain,
+    size,
+    hashes: await hashFile(physicalPath),
+  });
+}
+
+function manualMembers(container: ContainerFormat, data: Buffer, virtualPath: string, limits: ScanLimits) {
+  return container === "zip"
+    ? readZip(data, limits)
+    : container === "tar"
+      ? readTar(data, limits)
+      : readGzip(data, virtualPath, limits);
+}
+
+async function inspectMaterializedArchive(
   sourcePath: string,
   virtualPath: string,
   data: Buffer,
@@ -57,38 +110,57 @@ function inspectContent(
   depth: number,
   limits: ScanLimits,
   state: ScanState,
-): void {
-  state.entriesSeen += 1;
-  state.expandedBytes += data.length;
-  if (state.entriesSeen > limits.maxEntries || state.expandedBytes > limits.maxExpandedBytes) {
-    throw new ArchiveInspectionError("limit_exceeded", "Scan expansion limits were exceeded");
+  archiveTool: ArchiveTool,
+): Promise<void> {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "retroroms-archive-"));
+  const temporaryArchive = join(temporaryRoot, "nested.archive");
+  try {
+    await writeFile(temporaryArchive, data, { flag: "wx", mode: 0o600 });
+    await inspectArchivePath(sourcePath, virtualPath, temporaryArchive, chain, depth, limits, state, archiveTool, data.length);
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
   }
+}
 
+async function inspectBuffer(
+  sourcePath: string,
+  virtualPath: string,
+  data: Buffer,
+  chain: string[],
+  depth: number,
+  limits: ScanLimits,
+  state: ScanState,
+  archiveTool: ArchiveTool,
+): Promise<void> {
+  registerExpansion(state, data.length);
   const container = detectContainer(data, virtualPath);
-  if (container === "7z" || container === "rar") {
-    warning(state, sourcePath, virtualPath, new ArchiveInspectionError("unsupported_archive", `${container.toUpperCase()} handler is recognized but not enabled in this build`));
-    return;
-  }
   if (!container) {
-    const item: DiscoveredContent = {
-      sourcePath,
-      virtualPath,
-      containerChain: chain,
-      size: data.length,
-      hashes: hashContent(data),
-    };
-    state.result.content.push(item);
+    recordBuffer(state, sourcePath, virtualPath, data, chain);
     return;
   }
   if (depth >= limits.maxDepth) {
-    warning(state, sourcePath, virtualPath, new ArchiveInspectionError("limit_exceeded", `Maximum archive depth ${limits.maxDepth} reached`));
+    addWarning(state, sourcePath, virtualPath, new ArchiveInspectionError("limit_exceeded", `Maximum archive depth ${limits.maxDepth} reached`));
     return;
   }
-
+  if (container === "7z" || container === "rar") {
+    try {
+      await inspectMaterializedArchive(sourcePath, virtualPath, data, chain, depth, limits, state, archiveTool);
+    } catch (error) {
+      const unavailable = error instanceof Error && "code" in error && error.code === "ENOENT";
+      addWarning(
+        state,
+        sourcePath,
+        virtualPath,
+        unavailable
+          ? new ArchiveInspectionError("unsupported_archive", `${container.toUpperCase()} requires the bundled archive helper`)
+          : error,
+      );
+    }
+    return;
+  }
   try {
-    const members = container === "zip" ? readZip(data, limits) : container === "tar" ? readTar(data, limits) : readGzip(data, virtualPath, limits);
-    for (const member of members) {
-      inspectContent(
+    for (const member of manualMembers(container, data, virtualPath, limits)) {
+      await inspectBuffer(
         sourcePath,
         `${virtualPath}::${member.name}`,
         member.data,
@@ -96,19 +168,136 @@ function inspectContent(
         depth + 1,
         limits,
         state,
+        archiveTool,
       );
     }
   } catch (error) {
-    warning(state, sourcePath, virtualPath, error);
+    addWarning(state, sourcePath, virtualPath, error);
+  }
+}
+
+async function inspectArchivePath(
+  sourcePath: string,
+  virtualPath: string,
+  archivePath: string,
+  chain: string[],
+  depth: number,
+  limits: ScanLimits,
+  state: ScanState,
+  archiveTool: ArchiveTool,
+  compressedSize: number,
+): Promise<void> {
+  const contentStart = state.result.content.length;
+  const expandedStart = state.expandedBytes;
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "retroroms-members-"));
+  try {
+    const members = await archiveTool.list(archivePath, limits);
+    for (let index = 0; index < members.length; index += 1) {
+      const member = members[index];
+      const extractedPath = join(temporaryRoot, `${index}.member`);
+      const extractedSize = await archiveTool.extractToFile(archivePath, member, extractedPath, limits);
+      if (state.expandedBytes + extractedSize - expandedStart > limits.maxExpandedBytes) {
+        throw new ArchiveInspectionError("limit_exceeded", `Archive exceeds the ${limits.maxExpandedBytes} expanded-byte limit`);
+      }
+      if (compressedSize > 0 && state.expandedBytes + extractedSize - expandedStart > compressedSize * limits.maxCompressionRatio) {
+        throw new ArchiveInspectionError("limit_exceeded", `Archive exceeds the ${limits.maxCompressionRatio}:1 expansion ratio limit`);
+      }
+      await inspectExtractedFile(
+        extractedPath,
+        sourcePath,
+        `${virtualPath}::${member}`,
+        [...chain, virtualPath],
+        depth + 1,
+        limits,
+        state,
+        archiveTool,
+      );
+      const expandedForArchive = state.expandedBytes - expandedStart;
+      if (expandedForArchive > limits.maxExpandedBytes) {
+        throw new ArchiveInspectionError("limit_exceeded", `Archive exceeds the ${limits.maxExpandedBytes} expanded-byte limit`);
+      }
+      if (compressedSize > 0 && expandedForArchive > compressedSize * limits.maxCompressionRatio) {
+        throw new ArchiveInspectionError("limit_exceeded", `Archive exceeds the ${limits.maxCompressionRatio}:1 expansion ratio limit`);
+      }
+    }
+  } catch (error) {
+    state.result.content.splice(contentStart);
+    state.expandedBytes = expandedStart;
+    throw error;
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+}
+
+async function inspectExtractedFile(
+  physicalPath: string,
+  sourcePath: string,
+  virtualPath: string,
+  chain: string[],
+  depth: number,
+  limits: ScanLimits,
+  state: ScanState,
+  archiveTool: ArchiveTool,
+): Promise<void> {
+  const fileStat = await stat(physicalPath);
+  const container = detectContainer(await readHeader(physicalPath), virtualPath);
+  if (!container) {
+    await recordFile(state, physicalPath, sourcePath, virtualPath, chain, fileStat.size);
+    return;
+  }
+  registerExpansion(state, fileStat.size);
+  if (depth >= limits.maxDepth) {
+    addWarning(state, sourcePath, virtualPath, new ArchiveInspectionError("limit_exceeded", `Maximum archive depth ${limits.maxDepth} reached`));
+    return;
+  }
+  await inspectArchivePath(sourcePath, virtualPath, physicalPath, chain, depth, limits, state, archiveTool, fileStat.size);
+}
+
+async function inspectRootFile(
+  sourcePath: string,
+  virtualPath: string,
+  limits: ScanLimits,
+  state: ScanState,
+  archiveTool: ArchiveTool,
+): Promise<void> {
+  const fileStat = await stat(sourcePath);
+  const container = detectContainer(await readHeader(sourcePath), virtualPath);
+  if (!container) {
+    if (fileStat.size > limits.maxEntryBytes) {
+      addWarning(state, sourcePath, virtualPath, new ArchiveInspectionError("limit_exceeded", `File exceeds the ${limits.maxEntryBytes} byte limit`));
+      return;
+    }
+    await recordFile(state, sourcePath, sourcePath, virtualPath, [], fileStat.size);
+    return;
+  }
+
+  try {
+    await inspectArchivePath(sourcePath, virtualPath, sourcePath, [], 0, limits, state, archiveTool, fileStat.size);
+  } catch (error) {
+    const unavailable = error instanceof Error && "code" in error && error.code === "ENOENT";
+    if (unavailable && container !== "7z" && container !== "rar" && fileStat.size <= limits.maxEntryBytes) {
+      await inspectBuffer(sourcePath, virtualPath, await readFile(sourcePath), [], 0, limits, state, archiveTool);
+      return;
+    }
+    addWarning(
+      state,
+      sourcePath,
+      virtualPath,
+      unavailable
+        ? new ArchiveInspectionError("unsupported_archive", `${container.toUpperCase()} requires the bundled archive helper`)
+        : error,
+    );
   }
 }
 
 export async function scanSourceRoots(
   roots: string[],
   overrides?: Partial<ScanLimits>,
+  options: ScannerOptions = {},
 ): Promise<ScanResult> {
   const limits = mergeLimits(overrides);
-  const state: ScanState = { result: { content: [], warnings: [] }, entriesSeen: 0, expandedBytes: 0 };
+  const archiveTool = options.archiveTool ?? new BsdtarArchiveTool();
+  const state: ScanState = { result: { content: [], warnings: [] }, expandedBytes: 0 };
   const distinctRoots = [...new Set(roots.map((root) => resolve(root)))];
 
   for (const requestedRoot of distinctRoots) {
@@ -121,10 +310,8 @@ export async function scanSourceRoots(
         state.result.warnings.push({ sourcePath: path, virtualPath: path, code: "unsafe_path", message: "Resolved file escapes the selected source root" });
         continue;
       }
-      const data = await readFile(resolvedPath);
-      inspectContent(resolvedPath, relativePath, data, [], 0, limits, state);
+      await inspectRootFile(resolvedPath, relativePath, limits, state, archiveTool);
     }
   }
   return state.result;
 }
-

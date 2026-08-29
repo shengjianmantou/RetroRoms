@@ -25,6 +25,8 @@ Locates or creates the processed library, starts the local services, and hosts t
 
 Enumerates user-approved roots, detects formats by content and extension, traverses containers safely, and emits immutable file observations and logical-game candidates.
 
+Ordinary files and extracted archive members are hashed incrementally. An archive-helper interface lists members and streams one member at a time into a private temporary file, allowing nested inspection without holding multi-gigabyte games in memory. The macOS release bundle will carry a pinned libarchive-compatible helper for ZIP, TAR, GZIP, 7z, and RAR input.
+
 ### Identity engine
 
 Calculates payload hashes, queries imported identification catalogs, parses release metadata, and associates representations with canonical games, editions, systems, and series.
@@ -44,4 +46,3 @@ Produces a dry-run plan, reserves destination paths, transforms packaging, verif
 - Never update the portable catalog before exported content is verified.
 - Never silently replace an existing destination file with different content.
 - Never persist provider credentials in a portable library unless explicitly enabled.
-

@@ -5,7 +5,6 @@
   "type": "module",
   "scripts": {
     "test": "node --test src/*.test.ts",
-    "typecheck": "node --check src/archive.ts && node --check src/hash.ts && node --check src/scanner.ts"
+    "typecheck": "node --check src/archive.ts && node --check src/externalArchive.ts && node --check src/hash.ts && node --check src/scanner.ts"
   }
 }
-

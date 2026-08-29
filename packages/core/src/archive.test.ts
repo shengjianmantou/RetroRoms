@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { gzipSync } from "node:zlib";
 import { isSafeMemberPath, readTar } from "./archive.ts";
+import type { ArchiveTool } from "./externalArchive.ts";
 import { crc32 } from "./hash.ts";
 import { scanSourceRoots } from "./scanner.ts";
 import { DEFAULT_SCAN_LIMITS } from "./types.ts";
@@ -101,8 +102,8 @@ test("scans nested gzip and TAR containers into independent content", async () =
   const result = await scanSourceRoots([root]);
   assert.equal(result.warnings.length, 0);
   assert.deepEqual(result.content.map((item) => item.virtualPath), [
-    "snes/collection.tar.gz::snes/collection.tar::A.sfc",
-    "snes/collection.tar.gz::snes/collection.tar::B.sfc",
+    "snes/collection.tar.gz::A.sfc",
+    "snes/collection.tar.gz::B.sfc",
   ]);
   assert.notEqual(result.content[0].hashes.sha256, result.content[1].hashes.sha256);
 });
@@ -129,3 +130,45 @@ test("reports unsafe paths without writing extracted data", async () => {
   assert.equal(result.warnings[0].code, "unsafe_path");
 });
 
+test("uses the archive helper for a recognized 7z container", async () => {
+  const root = await mkdtemp(join(tmpdir(), "retroroms-test-"));
+  await writeFile(join(root, "collection.7z"), Buffer.from([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c, 0, 0]));
+  const tool: ArchiveTool = {
+    async list() {
+      return ["Game Boy/Game.gb"];
+    },
+    async extractToFile(_archivePath, _member, destination) {
+      const data = Buffer.from("game-boy-rom");
+      await writeFile(destination, data);
+      return data.length;
+    },
+  };
+
+  const result = await scanSourceRoots([root], undefined, { archiveTool: tool });
+  assert.equal(result.warnings.length, 0);
+  assert.equal(result.content[0].virtualPath, "collection.7z::Game Boy/Game.gb");
+  assert.equal(result.content[0].containerChain[0], "collection.7z");
+});
+
+test("rolls back an archive that exceeds its expanded-byte budget", async () => {
+  const root = await mkdtemp(join(tmpdir(), "retroroms-test-"));
+  await writeFile(join(root, "collection.zip"), makeStoredZip([
+    ["A.sfc", Buffer.from("game-a")],
+    ["B.sfc", Buffer.from("game-b")],
+  ]));
+
+  const result = await scanSourceRoots([root], { maxExpandedBytes: 8, maxCompressionRatio: 10_000 });
+  assert.equal(result.content.length, 0);
+  assert.equal(result.warnings[0].code, "limit_exceeded");
+});
+
+test("streams an ordinary file into stable content hashes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "retroroms-test-"));
+  const data = Buffer.alloc(2 * 1024 * 1024, 0x5a);
+  await writeFile(join(root, "Large Game.iso"), data);
+
+  const result = await scanSourceRoots([root]);
+  assert.equal(result.warnings.length, 0);
+  assert.equal(result.content[0].size, data.length);
+  assert.equal(result.content[0].hashes.crc32, crc32(data));
+});

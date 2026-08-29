@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import type { ContentHashes } from "./types.ts";
 
 const CRC_TABLE = Array.from({ length: 256 }, (_, value) => {
@@ -22,6 +23,23 @@ export function hashContent(data: Uint8Array): ContentHashes {
     crc32: crc32(data),
     sha1: createHash("sha1").update(data).digest("hex"),
     sha256: createHash("sha256").update(data).digest("hex"),
+  };
+}
+
+export async function hashFile(path: string): Promise<ContentHashes> {
+  const sha1 = createHash("sha1");
+  const sha256 = createHash("sha256");
+  let crc = 0xffffffff;
+  for await (const chunk of createReadStream(path)) {
+    const data = chunk as Buffer;
+    sha1.update(data);
+    sha256.update(data);
+    for (const value of data) crc = CRC_TABLE[(crc ^ value) & 0xff] ^ (crc >>> 8);
+  }
+  return {
+    crc32: ((crc ^ 0xffffffff) >>> 0).toString(16).padStart(8, "0"),
+    sha1: sha1.digest("hex"),
+    sha256: sha256.digest("hex"),
   };
 }
 

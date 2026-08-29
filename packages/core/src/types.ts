@@ -7,6 +7,8 @@ export interface ScanLimits {
   maxEntryBytes: number;
   maxExpandedBytes: number;
   maxCompressionRatio: number;
+  archiveCommandTimeoutMs: number;
+  maxArchiveListingBytes: number;
 }
 
 export interface ContentHashes {
@@ -43,8 +45,9 @@ export interface ScanResult {
 export const DEFAULT_SCAN_LIMITS: ScanLimits = {
   maxDepth: 4,
   maxEntries: 100_000,
-  maxEntryBytes: 8 * 1024 * 1024 * 1024,
-  maxExpandedBytes: 32 * 1024 * 1024 * 1024,
+  maxEntryBytes: 32 * 1024 * 1024 * 1024,
+  maxExpandedBytes: 128 * 1024 * 1024 * 1024,
   maxCompressionRatio: 250,
+  archiveCommandTimeoutMs: 120_000,
+  maxArchiveListingBytes: 16 * 1024 * 1024,
 };
-
