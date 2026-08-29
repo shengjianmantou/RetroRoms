@@ -1,4 +1,5 @@
-import { cp, mkdir, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -16,4 +17,8 @@ if (platform === "linux") {
 } else {
   await writeFile(join(output, "RetroRoms.cmd"), "@echo off\r\nnode \"%~dp0apps\\desktop\\launch.mjs\" %*\r\n");
 }
+const version = JSON.parse(await readFile(join(root, "package.json"), "utf8")).version;
+const launcherName = platform === "linux" ? "RetroRoms.sh" : "RetroRoms.cmd";
+const launcher = await readFile(join(output, launcherName));
+await writeFile(join(output, "RELEASE.json"), `${JSON.stringify({ product: "RetroRoms", version, platform, node: ">=22", entryPoint: launcherName, checksums: { launcher: createHash("sha256").update(launcher).digest("hex") } }, null, 2)}\n`);
 console.log(`Created ${platform} bundle at ${output}`);

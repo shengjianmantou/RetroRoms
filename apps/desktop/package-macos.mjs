@@ -1,6 +1,7 @@
-import { cp, mkdir, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 
 const repositoryRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const output = resolve(process.argv[process.argv.indexOf("--output") + 1] || join(repositoryRoot, "dist", "RetroRoms.app"));
@@ -17,4 +18,7 @@ await writeFile(join(contents, "Info.plist"), `<?xml version="1.0" encoding="UTF
 const launcher = `#!/bin/sh\nset -eu\nROOT="$(CDPATH= cd -- "$(dirname -- "$0")/../Resources" && pwd)"\nif ! command -v node >/dev/null 2>&1; then echo "RetroRoms requires Node.js 22 or newer." >&2; exit 1; fi\nif [ "$#" -eq 1 ]; then exec node "$ROOT/apps/desktop/launch.mjs" "$1"; fi\nexec node "$ROOT/apps/cli/src/main.ts" "$@"\n`;
 await writeFile(join(macos, "RetroRoms"), launcher, { mode: 0o755 });
 await writeFile(join(output, "RetroRoms.command"), `#!/bin/sh\nexec "$(dirname "$0")/Contents/MacOS/RetroRoms" "$@"\n`, { mode: 0o755 });
+const version = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8")).version;
+const checksum = (value) => createHash("sha256").update(value).digest("hex");
+await writeFile(join(output, "RELEASE.json"), `${JSON.stringify({ product: "RetroRoms", version, platform: "macos", node: ">=22", entryPoint: "RetroRoms.command", checksums: { launcher: checksum(launcher) } }, null, 2)}\n`);
 console.log(`Created macOS MVP bundle at ${output}`);
