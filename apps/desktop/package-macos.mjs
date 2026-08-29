@@ -1,0 +1,19 @@
+import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+
+const repositoryRoot = resolve(new URL("../..", import.meta.url).pathname);
+const output = resolve(process.argv[process.argv.indexOf("--output") + 1] || join(repositoryRoot, "dist", "RetroRoms.app"));
+const contents = join(output, "Contents");
+const resources = join(contents, "Resources");
+const macos = join(contents, "MacOS");
+await mkdir(resources, { recursive: true });
+await mkdir(macos, { recursive: true });
+await cp(join(repositoryRoot, "apps"), join(resources, "apps"), { recursive: true });
+await cp(join(repositoryRoot, "packages"), join(resources, "packages"), { recursive: true });
+await cp(join(repositoryRoot, "package.json"), join(resources, "package.json"));
+await cp(join(repositoryRoot, "package-lock.json"), join(resources, "package-lock.json"));
+await writeFile(join(contents, "Info.plist"), `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>CFBundleName</key><string>RetroRoms</string><key>CFBundleExecutable</key><string>RetroRoms</string></dict></plist>\n`);
+const launcher = `#!/bin/sh\nset -eu\nROOT="$(CDPATH= cd -- "$(dirname -- "$0")/Resources" && pwd)"\nif ! command -v node >/dev/null 2>&1; then echo "RetroRoms requires Node.js 22 or newer." >&2; exit 1; fi\nexec node "$ROOT/apps/cli/src/main.ts" "$@"\n`;
+await writeFile(join(macos, "RetroRoms"), launcher, { mode: 0o755 });
+await writeFile(join(output, "RetroRoms.command"), `#!/bin/sh\nexec "$(dirname "$0")/Contents/MacOS/RetroRoms" "$@"\n`, { mode: 0o755 });
+console.log(`Created macOS MVP bundle at ${output}`);
