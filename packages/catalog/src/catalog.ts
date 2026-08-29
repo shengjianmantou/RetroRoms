@@ -188,6 +188,39 @@ export class Catalog {
     return row.count;
   }
 
+  listObservations(limit = 5_000): Array<{
+    id: string;
+    rootKind: RootKind;
+    rootPath: string;
+    relativePath: string;
+    virtualPath: string;
+    byteSize: number;
+    crc32: string;
+    sha1: string;
+    sha256: string;
+    containerChain: string[];
+  }> {
+    const rows = this.database.prepare(`
+      SELECT o.id, r.kind AS rootKind, r.path AS rootPath, o.relative_path AS relativePath,
+        o.virtual_path AS virtualPath, o.byte_size AS byteSize, o.crc32, o.sha1, o.sha256,
+        o.container_chain_json AS containerChainJson
+      FROM content_observations o JOIN roots r ON r.id = o.root_id
+      ORDER BY o.virtual_path LIMIT ?
+    `).all(Math.max(1, Math.min(limit, 50_000))) as Array<{
+      id: string;
+      rootKind: RootKind;
+      rootPath: string;
+      relativePath: string;
+      virtualPath: string;
+      byteSize: number;
+      crc32: string;
+      sha1: string;
+      sha256: string;
+      containerChainJson: string;
+    }>;
+    return rows.map((row) => ({ ...row, containerChain: JSON.parse(row.containerChainJson) as string[] }));
+  }
+
   findBySha256(sha256: string): Array<{ rootKind: RootKind; relativePath: string; virtualPath: string }> {
     return this.database.prepare(`
       SELECT r.kind AS rootKind, o.relative_path AS relativePath, o.virtual_path AS virtualPath

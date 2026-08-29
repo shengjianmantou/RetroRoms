@@ -1,0 +1,16 @@
+{
+  "name": "@retroroms/ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@retroroms/catalog": "0.1.0",
+    "@retroroms/core": "0.1.0"
+  },
+  "scripts": {
+    "serve": "node src/server.ts",
+    "test": "node --test src/*.test.ts",
+    "typecheck": "node --check src/server.ts"
+  }
+}
+
