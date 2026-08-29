@@ -16,18 +16,22 @@ function json(response: import("node:http").ServerResponse, value: unknown, stat
 }
 
 function observations(catalog: Catalog) {
+  const editionsByHash = new Map(catalog.listEditions().map((edition) => [edition.contentSha256, edition]));
   return catalog.listObservations().map((item) => {
     const release = parseReleaseFilename(item.virtualPath);
+    const edition = editionsByHash.get(item.sha256);
     const system = item.relativePath.split("/")[0] || "unknown";
     return {
       ...item,
-      title: release.title || basename(item.relativePath),
-      languages: release.languages,
-      regions: release.regions,
-      revision: release.revision ?? null,
+      title: edition?.title || release.title || basename(item.relativePath),
+      languages: edition?.languages ?? release.languages,
+      regions: edition?.region ? [edition.region] : release.regions,
+      revision: edition?.revision ?? release.revision ?? null,
       disc: release.disc ?? null,
       system,
-      seriesKey: normalizeSeriesKey(release.title || basename(item.relativePath)),
+      seriesKey: edition?.seriesName || normalizeSeriesKey(edition?.title || release.title || basename(item.relativePath)),
+      preferred: edition?.preferred ?? false,
+      identitySource: edition?.identitySource ?? "filename",
       artwork: null,
     };
   });

@@ -274,14 +274,15 @@ export class Catalog {
     return { gameId, editionId };
   }
 
-  listEditions(): Array<{ id: string; gameId: string; title: string; systemKey: string; languages: string[]; preferred: boolean; contentSha256: string }> {
+  listEditions(): Array<{ id: string; gameId: string; title: string; seriesName: string | null; systemKey: string; region: string | null; revision: string | null; languages: string[]; preferred: boolean; identitySource: string; contentSha256: string }> {
     const rows = this.database.prepare(`
-      SELECT e.id, e.game_id AS gameId, g.canonical_title AS title, e.system_key AS systemKey,
-        e.languages_json AS languagesJson, e.preferred, ec.sha256 AS contentSha256
+      SELECT e.id, e.game_id AS gameId, g.canonical_title AS title, g.series_name AS seriesName,
+        e.system_key AS systemKey, e.region, e.revision, e.languages_json AS languagesJson,
+        e.preferred, e.identity_source AS identitySource, ec.sha256 AS contentSha256
       FROM editions e JOIN games g ON g.id = e.game_id
       LEFT JOIN edition_content ec ON ec.edition_id = e.id
       ORDER BY g.sort_title, e.system_key
-    `).all() as Array<{ id: string; gameId: string; title: string; systemKey: string; languagesJson: string; preferred: number; contentSha256: string }>;
+    `).all() as Array<{ id: string; gameId: string; title: string; seriesName: string | null; systemKey: string; region: string | null; revision: string | null; languagesJson: string; preferred: number; identitySource: string; contentSha256: string }>;
     return rows.map((row) => ({ ...row, languages: JSON.parse(row.languagesJson) as string[], preferred: row.preferred === 1 }));
   }
 
