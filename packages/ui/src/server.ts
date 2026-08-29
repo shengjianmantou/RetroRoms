@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { copyFile, mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, stat, unlink } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -76,7 +76,7 @@ export async function createUiServer(options: UiServerOptions) {
         if (body.length > 2_000_000) { json(response, { error: "request too large" }, 413); return; }
       }
       try {
-        const payload = JSON.parse(body) as { ids?: string[]; policy?: OutputPolicy; profiles?: ProfilePayload };
+        const payload = JSON.parse(body) as { ids?: string[]; policy?: OutputPolicy; profiles?: ProfilePayload; overwriteConflicts?: boolean };
         const selected = new Set(payload.ids ?? []);
         const candidates: ExportCandidate[] = observations(catalog)
           .filter((item) => selected.has(item.id))
@@ -115,10 +115,14 @@ export async function createUiServer(options: UiServerOptions) {
           try {
             await stat(destination);
             const existingSha256 = createHash("sha256").update(await readFile(destination)).digest("hex");
-            results.push(existingSha256 === source.sha256
-              ? { ...item, status: "skip-existing", message: "Destination already contains the source content" }
-              : { ...item, status: "conflict", message: "Destination exists with different content; no overwrite" });
-            continue;
+            if (existingSha256 === source.sha256) {
+              results.push({ ...item, status: "skip-existing", message: "Destination already contains the source content" });
+              continue;
+            }
+            if (!payload.overwriteConflicts) {
+              results.push({ ...item, status: "conflict", message: "Destination exists with different content; no overwrite" });
+              continue;
+            }
           } catch { /* create new destination */ }
           await mkdir(dirname(destination), { recursive: true });
           const members = source.virtualPath.split("::").slice(1);
@@ -131,7 +135,7 @@ export async function createUiServer(options: UiServerOptions) {
             }
             if (temporaryRoot) await new BsdtarArchiveTool().extractToFile(sourcePath, members[0], materialized, { maxArchiveListingBytes: 4_000_000, maxEntries: 100_000, maxEntryBytes: 2_000_000_000, maxExpandedBytes: 4_000_000_000, maxCompressionRatio: 200, maxDepth: 4, archiveCommandTimeoutMs: 120_000 });
             if (item.outputFormat === "raw") await copyFile(materialized, destination);
-            else await execFileAsync("zip", ["-j", "-q", destination, materialized]);
+            else { await unlink(destination).catch(() => undefined); await execFileAsync("zip", ["-j", "-q", destination, materialized]); }
             const edition = catalog.findEditionByContentSha256(source.sha256);
             const processedRootRecord = catalog.findRoot("processed", processedRoot);
             if (edition && processedRootRecord) {

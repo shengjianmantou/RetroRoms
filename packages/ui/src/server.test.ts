@@ -27,5 +27,10 @@ test("serves catalog observations and export previews", async () => {
   assert.equal(await readFile(join(processed, exported.results[0].destinationRelativePath), "utf8"), "rom");
   const retry = await (await fetch(`http://127.0.0.1:${port}/api/export`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids: [observations.observations[0].id], policy: "uncompressed" }) })).json() as { results: Array<{ status: string }> };
   assert.equal(retry.results[0].status, "skip-existing");
+  await writeFile(join(processed, exported.results[0].destinationRelativePath), "different");
+  const conflict = await (await fetch(`http://127.0.0.1:${port}/api/export`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids: [observations.observations[0].id], policy: "uncompressed" }) })).json() as { results: Array<{ status: string }> };
+  assert.equal(conflict.results[0].status, "conflict");
+  const overwrite = await (await fetch(`http://127.0.0.1:${port}/api/export`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids: [observations.observations[0].id], policy: "uncompressed", overwriteConflicts: true }) })).json() as { results: Array<{ status: string }> };
+  assert.equal(overwrite.results[0].status, "exported");
   await ui.close();
 });
