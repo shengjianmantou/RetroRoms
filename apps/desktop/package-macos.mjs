@@ -1,7 +1,8 @@
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const repositoryRoot = resolve(new URL("../..", import.meta.url).pathname);
+const repositoryRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const output = resolve(process.argv[process.argv.indexOf("--output") + 1] || join(repositoryRoot, "dist", "RetroRoms.app"));
 const contents = join(output, "Contents");
 const resources = join(contents, "Resources");

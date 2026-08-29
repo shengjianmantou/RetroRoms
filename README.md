@@ -30,7 +30,7 @@ docs               requirements, architecture, safety, and format policies
 
 ## Status
 
-The repository currently contains a tested streaming inventory scanner, bounded nested-archive handling, a portable SQLite catalog, an ingestion service that compares source roots with an existing processed library, filename language/region preference logic, and a dry-run per-system export planner. A development-only CLI exercises ingestion with no export, move, or delete behavior.
+The repository currently contains a tested streaming inventory scanner, bounded nested-archive handling, a portable SQLite catalog, DAT-aware language/region curation, a local browser UI, per-system export profiles, verified export history, and a safe export executor. Source roots are never modified; differing destinations are reported as conflicts unless explicitly overwritten.
 
 ```bash
 npm run scan -w @retroroms/cli -- \
@@ -39,4 +39,14 @@ npm run scan -w @retroroms/cli -- \
   --name "My ROM Library"
 ```
 
-Do not use the development CLI on an irreplaceable collection without a separate backup. The browser UI, verified export executor, DAT metadata providers, pinned archive-helper bundle, and signed macOS application are not implemented yet.
+Do not use the development CLI on an irreplaceable collection without a separate backup. The macOS bundle is an unsigned MVP and requires Node.js 22+.
+
+## macOS MVP bundle
+
+Build a portable app-style bundle (Node.js 22+ required on the target Mac):
+
+```bash
+npm run package:mac -- --output "/path/to/RetroRoms.app"
+```
+
+Double-click `RetroRoms.command` inside the bundle and pass the processed-library path to launch the review UI. The bundle also includes the scan CLI for scripted ingestion. Windows/Linux native packaging and signed distribution are planned next.
