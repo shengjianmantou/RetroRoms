@@ -224,6 +224,10 @@ export class Catalog {
     return row;
   }
 
+  listScanRuns(limit = 25): Array<{ id: string; startedAt: string; completedAt: string | null; status: string; warningCount: number; errorMessage: string | null }> {
+    return this.database.prepare(`SELECT id, started_at AS startedAt, completed_at AS completedAt, status, warning_count AS warningCount, error_message AS errorMessage FROM scan_runs ORDER BY started_at DESC LIMIT ?`).all(Math.max(1, Math.min(limit, 100))) as Array<{ id: string; startedAt: string; completedAt: string | null; status: string; warningCount: number; errorMessage: string | null }>;
+  }
+
   listObservations(limit = 5_000): Array<{
     id: string;
     rootKind: RootKind;
