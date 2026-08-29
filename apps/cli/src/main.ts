@@ -5,10 +5,12 @@ export interface CliArguments {
   sourceRoots: string[];
   processedRoot: string;
   displayName?: string;
+  datFiles: string[];
+  languagePreference?: Array<"en" | "zh" | "ja">;
 }
 
 const USAGE = `Usage:
-  npm run scan -w @retroroms/cli -- --source <path> [--source <path> ...] --processed <path> [--name <label>]
+  npm run scan -w @retroroms/cli -- --source <path> [--source <path> ...] --processed <path> [--name <label>] [--dat <file>] [--languages en,zh,ja]
 
 This development command scans sources read-only and creates or updates the portable
 catalog under <processed>/.rom-curator. It does not export, move, or delete ROMs.`;
@@ -17,24 +19,32 @@ export function parseArguments(argv: string[]): CliArguments {
   const sourceRoots: string[] = [];
   let processedRoot: string | undefined;
   let displayName: string | undefined;
+  const datFiles: string[] = [];
+  let languagePreference: Array<"en" | "zh" | "ja"> | undefined;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--source") sourceRoots.push(argv[++index] ?? "");
     else if (argument === "--processed") processedRoot = argv[++index];
     else if (argument === "--name") displayName = argv[++index];
+    else if (argument === "--dat") datFiles.push(argv[++index] ?? "");
+    else if (argument === "--languages") {
+      const values = (argv[++index] ?? "").split(",").filter(Boolean);
+      if (values.some((value) => !["en", "zh", "ja"].includes(value))) throw new Error("--languages accepts en, zh, and ja");
+      languagePreference = values as Array<"en" | "zh" | "ja">;
+    }
     else if (argument === "--help" || argument === "-h") throw new Error(USAGE);
     else throw new Error(`Unknown argument: ${argument}\n\n${USAGE}`);
   }
   if (sourceRoots.length === 0 || sourceRoots.some((item) => !item) || !processedRoot) {
     throw new Error(USAGE);
   }
-  return { sourceRoots, processedRoot, displayName };
+  return { sourceRoots, processedRoot, displayName, datFiles, languagePreference };
 }
 
 async function main(): Promise<void> {
   try {
     const request = parseArguments(process.argv.slice(2));
-    const summary = await ingestLibrary(request);
+    const summary = await ingestLibrary({ ...request, datFiles: request.datFiles.map((path) => ({ path })) });
     process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
     if (summary.warnings.length > 0) process.exitCode = 2;
   } catch (error) {
@@ -44,4 +54,3 @@ async function main(): Promise<void> {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();
-
