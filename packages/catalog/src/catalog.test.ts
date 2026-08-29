@@ -80,5 +80,6 @@ test("records verified export history", () => {
   const row = catalog.database.prepare("SELECT package_format AS format, verified_at AS verifiedAt FROM exports").get() as { format: string; verifiedAt: string };
   assert.equal(row.format, "raw");
   assert.ok(row.verifiedAt);
+  assert.equal(catalog.listExports()[0]?.relativePath, "roms/snes/Game.sfc");
   catalog.close();
 });

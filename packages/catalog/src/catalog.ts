@@ -321,6 +321,10 @@ export class Catalog {
     `).run(randomUUID(), input.editionId, input.processedRootId, input.relativePath, input.outputPolicy, input.packageFormat, input.packageSha256, JSON.stringify(input.contentManifest), timestamp, timestamp);
   }
 
+  listExports(limit = 5_000): Array<{ relativePath: string; packageFormat: string; packageSha256: string; outputPolicy: OutputPolicy; exportedAt: string; verifiedAt: string }> {
+    return this.database.prepare(`SELECT relative_path AS relativePath, package_format AS packageFormat, package_sha256 AS packageSha256, output_policy AS outputPolicy, exported_at AS exportedAt, verified_at AS verifiedAt FROM exports ORDER BY exported_at DESC LIMIT ?`).all(Math.max(1, Math.min(limit, 50_000))) as Array<{ relativePath: string; packageFormat: string; packageSha256: string; outputPolicy: OutputPolicy; exportedAt: string; verifiedAt: string }>;
+  }
+
   findBySha256(sha256: string): Array<{ rootKind: RootKind; relativePath: string; virtualPath: string }> {
     return this.database.prepare(`
       SELECT r.kind AS rootKind, o.relative_path AS relativePath, o.virtual_path AS virtualPath

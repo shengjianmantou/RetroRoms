@@ -65,6 +65,10 @@ export async function createUiServer(options: UiServerOptions) {
       json(response, { observations: observations(catalog) });
       return;
     }
+    if (request.method === "GET" && url.pathname === "/api/exports") {
+      json(response, { exports: catalog.listExports() });
+      return;
+    }
     if (request.method === "POST" && url.pathname === "/api/export-preview") {
       let body = "";
       for await (const chunk of request) {
