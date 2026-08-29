@@ -26,7 +26,14 @@ export function detectContainer(
   data: Uint8Array,
   name: string,
 ): ContainerFormat | RecognizedUnsupportedFormat | undefined {
-  if (data.length >= 4 && data[0] === 0x50 && data[1] === 0x4b && [0x03, 0x05, 0x07].includes(data[2]) && [0x04, 0x06, 0x08].includes(data[3])) return "zip";
+  if (
+    data.length >= 4 &&
+    data[0] === 0x50 &&
+    data[1] === 0x4b &&
+    ((data[2] === 0x03 && data[3] === 0x04) ||
+      (data[2] === 0x05 && data[3] === 0x06) ||
+      (data[2] === 0x07 && data[3] === 0x08))
+  ) return "zip";
   if (data.length >= 6 && Buffer.from(data.subarray(0, 6)).equals(Buffer.from([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c]))) return "7z";
   if (data.length >= 7 && Buffer.from(data.subarray(0, 7)).equals(Buffer.from("Rar!\x1a\x07", "binary"))) return "rar";
   if (data.length >= 2 && data[0] === 0x1f && data[1] === 0x8b) return "gzip";
