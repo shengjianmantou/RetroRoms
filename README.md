@@ -30,7 +30,7 @@ docs               requirements, architecture, safety, and format policies
 
 ## Status
 
-The repository currently contains a tested streaming inventory scanner, bounded nested-archive handling, a portable SQLite catalog, and an ingestion service that compares source roots with an existing processed library. A development-only CLI exercises this path with no export, move, or delete behavior.
+The repository currently contains a tested streaming inventory scanner, bounded nested-archive handling, a portable SQLite catalog, an ingestion service that compares source roots with an existing processed library, filename language/region preference logic, and a dry-run per-system export planner. A development-only CLI exercises ingestion with no export, move, or delete behavior.
 
 ```bash
 npm run scan -w @retroroms/cli -- \
@@ -39,4 +39,4 @@ npm run scan -w @retroroms/cli -- \
   --name "My ROM Library"
 ```
 
-Do not use the development CLI on an irreplaceable collection without a separate backup. The browser UI, verified export engine, pinned archive-helper bundle, and signed macOS application are not implemented yet.
+Do not use the development CLI on an irreplaceable collection without a separate backup. The browser UI, verified export executor, DAT metadata providers, pinned archive-helper bundle, and signed macOS application are not implemented yet.
