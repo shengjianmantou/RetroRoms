@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
 import { basename, dirname, join, resolve } from "node:path";
 import { Catalog } from "@retroroms/catalog";
-import { BsdtarArchiveTool, createExportPlan, normalizeSeriesKey, parseReleaseFilename, type ExportCandidate } from "@retroroms/core";
+import { BsdtarArchiveTool, createExportPlan, normalizeSeriesKey, parseReleaseFilename, type ExportCandidate, type OutputPolicy, type PackageFormat } from "@retroroms/core";
 
 const execFileAsync = promisify(execFile);
 
@@ -41,6 +41,14 @@ function observations(catalog: Catalog) {
   });
 }
 
+type ProfilePayload = Record<string, { outputPolicy?: OutputPolicy; compressedFormat?: PackageFormat }>;
+function profilesFor(candidates: ExportCandidate[], payload: { policy?: OutputPolicy; profiles?: ProfilePayload }) {
+  return [...new Set(candidates.map((candidate) => candidate.systemKey))].map((systemKey) => {
+    const profile = payload.profiles?.[systemKey];
+    return { systemKey, outputPolicy: profile?.outputPolicy ?? payload.policy ?? "auto", compressedFormat: profile?.compressedFormat };
+  });
+}
+
 export async function createUiServer(options: UiServerOptions) {
   const catalog = new Catalog(resolve(options.libraryPath));
   catalog.initialize();
@@ -63,13 +71,12 @@ export async function createUiServer(options: UiServerOptions) {
         if (body.length > 2_000_000) { json(response, { error: "request too large" }, 413); return; }
       }
       try {
-        const payload = JSON.parse(body) as { ids?: string[]; policy?: "auto" | "compressed" | "uncompressed" | "preserve" };
+        const payload = JSON.parse(body) as { ids?: string[]; policy?: OutputPolicy; profiles?: ProfilePayload };
         const selected = new Set(payload.ids ?? []);
         const candidates: ExportCandidate[] = observations(catalog)
           .filter((item) => selected.has(item.id))
           .map((item) => ({ id: item.id, systemKey: item.system, title: item.title, sourceVirtualPath: item.virtualPath, sourceSha256: item.sha256 }));
-        const systems = [...new Set(candidates.map((candidate) => candidate.systemKey))].map((systemKey) => ({ systemKey, outputPolicy: payload.policy ?? "auto" as const }));
-        json(response, { plan: createExportPlan(candidates, systems) });
+        json(response, { plan: createExportPlan(candidates, profilesFor(candidates, payload)) });
       } catch (error) {
         json(response, { error: error instanceof Error ? error.message : String(error) }, 400);
       }
@@ -82,13 +89,12 @@ export async function createUiServer(options: UiServerOptions) {
         if (body.length > 2_000_000) { json(response, { error: "request too large" }, 413); return; }
       }
       try {
-        const payload = JSON.parse(body) as { ids?: string[]; policy?: "auto" | "compressed" | "uncompressed" | "preserve" };
+        const payload = JSON.parse(body) as { ids?: string[]; policy?: OutputPolicy; profiles?: ProfilePayload };
         const all = observations(catalog);
         const selected = new Set(payload.ids ?? []);
         const chosen = all.filter((item) => selected.has(item.id));
         const candidates: ExportCandidate[] = chosen.map((item) => ({ id: item.id, systemKey: item.system, title: item.title, sourceVirtualPath: item.virtualPath, sourceSha256: item.sha256 }));
-        const systems = [...new Set(candidates.map((candidate) => candidate.systemKey))].map((systemKey) => ({ systemKey, outputPolicy: payload.policy ?? "auto" as const }));
-        const plan = createExportPlan(candidates, systems);
+        const plan = createExportPlan(candidates, profilesFor(candidates, payload));
         const processedRoot = dirname(dirname(resolve(options.libraryPath)));
         const results = [];
         for (const item of plan) {
