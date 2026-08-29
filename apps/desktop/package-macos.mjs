@@ -20,5 +20,6 @@ await writeFile(join(macos, "RetroRoms"), launcher, { mode: 0o755 });
 await writeFile(join(output, "RetroRoms.command"), `#!/bin/sh\nexec "$(dirname "$0")/Contents/MacOS/RetroRoms" "$@"\n`, { mode: 0o755 });
 const version = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8")).version;
 const checksum = (value) => createHash("sha256").update(value).digest("hex");
-await writeFile(join(output, "RELEASE.json"), `${JSON.stringify({ product: "RetroRoms", version, platform: "macos", node: ">=22", entryPoint: "RetroRoms.command", checksums: { launcher: checksum(launcher) } }, null, 2)}\n`);
+const commandLauncher = await readFile(join(output, "RetroRoms.command"));
+await writeFile(join(output, "RELEASE.json"), `${JSON.stringify({ product: "RetroRoms", version, platform: "macos", node: ">=22", entryPoint: "RetroRoms.command", checksums: { launcher: checksum(commandLauncher) } }, null, 2)}\n`);
 console.log(`Created macOS MVP bundle at ${output}`);

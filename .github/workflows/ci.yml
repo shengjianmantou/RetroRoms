@@ -32,6 +32,7 @@ jobs:
           cache: npm
       - run: npm install --ignore-scripts
       - run: npm run package:mac -- --output "$RUNNER_TEMP/RetroRoms.app"
+      - run: node apps/desktop/verify-release.mjs "$RUNNER_TEMP/RetroRoms.app"
       - uses: actions/upload-artifact@v4
         with:
           name: RetroRoms-macos-mvp
@@ -48,6 +49,7 @@ jobs:
           cache: npm
       - run: npm install --ignore-scripts
       - run: npm run package:linux -- --output "$RUNNER_TEMP/RetroRoms-linux"
+      - run: node apps/desktop/verify-release.mjs "$RUNNER_TEMP/RetroRoms-linux"
       - uses: actions/upload-artifact@v4
         with:
           name: RetroRoms-linux-mvp
@@ -64,6 +66,7 @@ jobs:
           cache: npm
       - run: npm install --ignore-scripts
       - run: npm run package:windows -- --output "$env:RUNNER_TEMP\RetroRoms-windows"
+      - run: node apps/desktop/verify-release.mjs "$env:RUNNER_TEMP\RetroRoms-windows"
       - uses: actions/upload-artifact@v4
         with:
           name: RetroRoms-windows-mvp
