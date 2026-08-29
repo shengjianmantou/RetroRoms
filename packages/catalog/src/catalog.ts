@@ -33,6 +33,19 @@ export interface LibraryInfo {
   updatedAt: string;
 }
 
+export interface EditionRecordInput {
+  canonicalTitle: string;
+  sortTitle: string;
+  seriesName?: string;
+  systemKey: string;
+  region?: string;
+  languages: string[];
+  revision?: string;
+  identitySource: "dat" | "serial" | "hash" | "filename" | "user";
+  preferred: boolean;
+  contentSha256: string;
+}
+
 function now(): string {
   return new Date().toISOString();
 }
@@ -219,6 +232,57 @@ export class Catalog {
       containerChainJson: string;
     }>;
     return rows.map((row) => ({ ...row, containerChain: JSON.parse(row.containerChainJson) as string[] }));
+  }
+
+  upsertEdition(input: EditionRecordInput): { gameId: string; editionId: string } {
+    const languageJson = JSON.stringify([...input.languages].sort());
+    const existingGame = this.database.prepare(`
+      SELECT g.id FROM games g JOIN editions e ON e.game_id = g.id
+      WHERE g.canonical_title = ? AND e.system_key = ? LIMIT 1
+    `).get(input.canonicalTitle, input.systemKey) as { id: string } | undefined;
+    const gameId = existingGame?.id ?? randomUUID();
+    if (!existingGame) {
+      const timestamp = now();
+      this.database.prepare(`
+        INSERT INTO games (id, canonical_title, sort_title, series_name, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(gameId, input.canonicalTitle, input.sortTitle, input.seriesName ?? null, timestamp, timestamp);
+    } else {
+      this.database.prepare("UPDATE games SET sort_title = ?, series_name = ?, updated_at = ? WHERE id = ?")
+        .run(input.sortTitle, input.seriesName ?? null, now(), gameId);
+    }
+    const existingEdition = this.database.prepare(`
+      SELECT id FROM editions WHERE game_id = ? AND system_key = ? AND region IS ? AND languages_json = ? AND revision IS ?
+    `).get(gameId, input.systemKey, input.region ?? null, languageJson, input.revision ?? null) as { id: string } | undefined;
+    const editionId = existingEdition?.id ?? randomUUID();
+    if (!existingEdition) {
+      this.database.prepare(`
+        INSERT INTO editions (id, game_id, system_key, region, languages_json, revision, identity_source, preferred)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(editionId, gameId, input.systemKey, input.region ?? null, languageJson, input.revision ?? null, input.identitySource, input.preferred ? 1 : 0);
+    } else {
+      // A later non-preferred candidate must not unset the preferred edition
+      // selected earlier in the same curation pass.
+      this.database.prepare("UPDATE editions SET identity_source = ?, preferred = CASE WHEN ? = 1 THEN 1 ELSE preferred END WHERE id = ?")
+        .run(input.identitySource, input.preferred ? 1 : 0, editionId);
+    }
+    this.database.prepare("INSERT OR IGNORE INTO edition_content (edition_id, sha256, role) VALUES (?, ?, 'rom')").run(editionId, input.contentSha256);
+    if (input.preferred) {
+      this.database.prepare("UPDATE editions SET preferred = 0 WHERE game_id = ? AND system_key = ? AND id != ?")
+        .run(gameId, input.systemKey, editionId);
+    }
+    return { gameId, editionId };
+  }
+
+  listEditions(): Array<{ id: string; gameId: string; title: string; systemKey: string; languages: string[]; preferred: boolean; contentSha256: string }> {
+    const rows = this.database.prepare(`
+      SELECT e.id, e.game_id AS gameId, g.canonical_title AS title, e.system_key AS systemKey,
+        e.languages_json AS languagesJson, e.preferred, ec.sha256 AS contentSha256
+      FROM editions e JOIN games g ON g.id = e.game_id
+      LEFT JOIN edition_content ec ON ec.edition_id = e.id
+      ORDER BY g.sort_title, e.system_key
+    `).all() as Array<{ id: string; gameId: string; title: string; systemKey: string; languagesJson: string; preferred: number; contentSha256: string }>;
+    return rows.map((row) => ({ ...row, languages: JSON.parse(row.languagesJson) as string[], preferred: row.preferred === 1 }));
   }
 
   findBySha256(sha256: string): Array<{ rootKind: RootKind; relativePath: string; virtualPath: string }> {

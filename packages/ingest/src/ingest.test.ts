@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { Catalog } from "@retroroms/catalog";
 import { ingestLibrary } from "./ingest.ts";
 
 test("ingests sources and an existing processed library into a portable catalog", async () => {
@@ -20,7 +21,16 @@ test("ingests sources and an existing processed library into a portable catalog"
   assert.equal(summary.scannedContentCount, 2);
   assert.equal(summary.catalogObservationCount, 2);
   assert.equal(summary.crossRootDuplicateGroups, 1);
+  assert.equal(summary.curatedGroupCount, 1);
   assert.equal(summary.warnings.length, 0);
+
+  const catalog = new Catalog(summary.catalogPath);
+  catalog.initialize();
+  const editions = catalog.listEditions();
+  assert.equal(editions.length, 1);
+  assert.equal(editions[0]?.title, "Game");
+  assert.equal(editions[0]?.preferred, true);
+  catalog.close();
 
   const manifest = JSON.parse(await readFile(summary.manifestPath, "utf8"));
   assert.equal(manifest.format, "retroroms-portable-library");

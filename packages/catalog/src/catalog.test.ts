@@ -58,3 +58,15 @@ test("rejects absolute observation paths", () => {
   catalog.close();
 });
 
+test("persists preferred editions and content links across upserts", () => {
+  const catalog = new Catalog(":memory:");
+  catalog.initialize();
+  const english = catalog.upsertEdition({ canonicalTitle: "Puzzle Quest", sortTitle: "Puzzle Quest", systemKey: "snes", region: "USA", languages: ["en"], identitySource: "dat", preferred: true, contentSha256: "a".repeat(64) });
+  catalog.upsertEdition({ canonicalTitle: "Puzzle Quest", sortTitle: "Puzzle Quest", systemKey: "snes", region: "China", languages: ["zh"], identitySource: "dat", preferred: false, contentSha256: "b".repeat(64) });
+  catalog.upsertEdition({ canonicalTitle: "Puzzle Quest", sortTitle: "Puzzle Quest", systemKey: "snes", region: "China", languages: ["zh"], identitySource: "dat", preferred: true, contentSha256: "b".repeat(64) });
+  const editions = catalog.listEditions();
+  assert.equal(editions.length, 2);
+  assert.equal(editions.find((edition) => edition.id === english.editionId)?.preferred, false);
+  assert.equal(editions.find((edition) => edition.languages[0] === "zh")?.preferred, true);
+  catalog.close();
+});

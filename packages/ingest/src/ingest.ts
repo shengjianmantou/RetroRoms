@@ -1,7 +1,7 @@
 import { mkdir, realpath, rename, stat, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { Catalog, relativePathWithinRoot } from "@retroroms/catalog";
-import { scanSourceRoots, type ScanLimits, type ScanWarning, type ScannerOptions } from "@retroroms/core";
+import { Catalog, relativePathWithinRoot, type EditionRecordInput } from "@retroroms/catalog";
+import { curateObservations, DatIndex, scanSourceRoots, type CurationObservation, type ScanLimits, type ScanWarning, type ScannerOptions } from "@retroroms/core";
 
 export interface IngestRequest {
   sourceRoots: string[];
@@ -9,6 +9,8 @@ export interface IngestRequest {
   displayName?: string;
   limits?: Partial<ScanLimits>;
   scannerOptions?: ScannerOptions;
+  datFiles?: Array<{ path: string; systemKey?: string }>;
+  languagePreference?: Array<"en" | "zh" | "ja" | "ko" | "fr" | "de" | "es" | "it" | "other">;
 }
 
 export interface PortableManifest {
@@ -28,6 +30,7 @@ export interface IngestSummary {
   scannedContentCount: number;
   catalogObservationCount: number;
   crossRootDuplicateGroups: number;
+  curatedGroupCount: number;
   warnings: ScanWarning[];
 }
 
@@ -63,9 +66,14 @@ export async function ingestLibrary(request: IngestRequest): Promise<IngestSumma
   const catalog = new Catalog(catalogPath);
   const warnings: ScanWarning[] = [];
   let scannedContentCount = 0;
+  let curatedGroupCount = 0;
+  const curationObservations: CurationObservation[] = [];
+  const observationHashes = new Map<string, string>();
   let scanRunId: string | undefined;
   try {
     catalog.initialize(request.displayName ?? basename(resolvedProcessedRoot));
+    const datIndex = new DatIndex();
+    for (const datFile of request.datFiles ?? []) await datIndex.addXmlFile(datFile.path, datFile.systemKey);
     const processedRootRecord = catalog.addRoot("processed", resolvedProcessedRoot, "Processed library");
     scanRunId = catalog.beginScan();
 
@@ -75,6 +83,7 @@ export async function ingestLibrary(request: IngestRequest): Promise<IngestSumma
       warnings.push(...result.warnings);
       scannedContentCount += result.content.length;
       for (const content of result.content) {
+        const observationId = `${rootRecord.id}:${content.virtualPath}`;
         catalog.recordObservation({
           scanRunId,
           rootId: rootRecord.id,
@@ -84,6 +93,8 @@ export async function ingestLibrary(request: IngestRequest): Promise<IngestSumma
           byteSize: content.size,
           ...content.hashes,
         });
+        curationObservations.push({ id: observationId, systemKey: content.virtualPath.split("/")[0] || "unknown", filename: basename(content.virtualPath.split("::").at(-1) ?? content.virtualPath), hashes: content.hashes });
+        observationHashes.set(observationId, content.hashes.sha256);
       }
     }
 
@@ -93,6 +104,7 @@ export async function ingestLibrary(request: IngestRequest): Promise<IngestSumma
       warnings.push(...result.warnings);
       scannedContentCount += result.content.length;
       for (const content of result.content) {
+        const observationId = `${processedRootRecord.id}:${content.virtualPath}`;
         const pathWithinRoms = relativePathWithinRoot(processedRoms, content.sourcePath);
         catalog.recordObservation({
           scanRunId,
@@ -103,9 +115,32 @@ export async function ingestLibrary(request: IngestRequest): Promise<IngestSumma
           byteSize: content.size,
           ...content.hashes,
         });
+        curationObservations.push({ id: observationId, systemKey: content.virtualPath.split("/")[0] || "unknown", filename: basename(content.virtualPath.split("::").at(-1) ?? content.virtualPath), hashes: content.hashes });
+        observationHashes.set(observationId, content.hashes.sha256);
       }
     }
 
+    const curatedGroups = curateObservations(curationObservations, datIndex, request.languagePreference);
+    for (const group of curatedGroups) {
+      for (const candidate of group.candidates) {
+        const contentSha256 = observationHashes.get(candidate.observationId);
+        if (!contentSha256) continue;
+        const input: EditionRecordInput = {
+          canonicalTitle: group.canonicalTitle,
+          sortTitle: group.canonicalTitle.toLocaleLowerCase(),
+          seriesName: group.seriesKey,
+          systemKey: group.systemKey,
+          region: candidate.metadata.regions[0],
+          languages: candidate.metadata.languages,
+          revision: candidate.metadata.revision,
+          identitySource: candidate.verified ? "dat" : "filename",
+          preferred: candidate.observationId === group.selectedObservationId,
+          contentSha256,
+        };
+        catalog.upsertEdition(input);
+      }
+    }
+    curatedGroupCount = curatedGroups.length;
     catalog.completeScan(scanRunId, warnings.length);
     const library = catalog.getLibraryInfo();
     await writeManifest(manifestPath, {
@@ -124,6 +159,7 @@ export async function ingestLibrary(request: IngestRequest): Promise<IngestSumma
       scannedContentCount,
       catalogObservationCount: catalog.countObservations(),
       crossRootDuplicateGroups: catalog.countCrossRootDuplicateGroups(),
+      curatedGroupCount,
       warnings,
     };
   } catch (error) {
@@ -133,4 +169,3 @@ export async function ingestLibrary(request: IngestRequest): Promise<IngestSumma
     catalog.close();
   }
 }
-
