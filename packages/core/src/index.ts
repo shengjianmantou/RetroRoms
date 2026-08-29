@@ -10,3 +10,5 @@ export { createExportPlan, inferCompressedFormat } from "./packaging.ts";
 export type { ExportCandidate, ExportPlanItem, ObservedRepresentation, OutputPolicy, PackageFormat, SystemPackagingProfile } from "./packaging.ts";
 export { groupBySeries, normalizeSeriesKey } from "./series.ts";
 export type { SeriesGroup, SeriesMember } from "./series.ts";
+export { DatIndex, parseDatXml } from "./dat.ts";
+export type { DatMatch, DatRomRecord } from "./dat.ts";
