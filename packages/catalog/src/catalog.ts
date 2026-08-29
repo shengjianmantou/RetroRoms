@@ -56,6 +56,13 @@ export interface ExportRecordInput {
   contentManifest: unknown;
 }
 
+export interface ScanWarningInput {
+  sourcePath: string;
+  virtualPath: string;
+  code: string;
+  message: string;
+}
+
 export type OutputPolicy = "auto" | "compressed" | "uncompressed" | "preserve";
 
 function now(): string {
@@ -168,6 +175,18 @@ export class Catalog {
       WHERE id = ? AND status = 'running'
     `).run(now(), warningCount, scanRunId);
     if (result.changes !== 1) throw new Error(`Scan is not running: ${scanRunId}`);
+  }
+
+  recordScanWarnings(scanRunId: string, warnings: ScanWarningInput[]): void {
+    const statement = this.database.prepare("INSERT INTO scan_warnings (id, scan_run_id, source_path, virtual_path, code, message) VALUES (?, ?, ?, ?, ?, ?)");
+    for (const warning of warnings) statement.run(randomUUID(), scanRunId, warning.sourcePath, warning.virtualPath, warning.code, warning.message);
+  }
+
+  listScanWarnings(scanRunId?: string, limit = 500): Array<ScanWarningInput & { scanRunId: string }> {
+    const rows = scanRunId
+      ? this.database.prepare("SELECT scan_run_id AS scanRunId, source_path AS sourcePath, virtual_path AS virtualPath, code, message FROM scan_warnings WHERE scan_run_id = ? ORDER BY id LIMIT ?").all(scanRunId, limit)
+      : this.database.prepare("SELECT scan_run_id AS scanRunId, source_path AS sourcePath, virtual_path AS virtualPath, code, message FROM scan_warnings ORDER BY id DESC LIMIT ?").all(limit);
+    return rows as Array<ScanWarningInput & { scanRunId: string }>;
   }
 
   failScan(scanRunId: string, error: unknown): void {

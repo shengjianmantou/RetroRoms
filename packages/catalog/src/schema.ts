@@ -30,6 +30,17 @@ CREATE TABLE IF NOT EXISTS scan_runs (
   error_message TEXT
 );
 
+CREATE TABLE IF NOT EXISTS scan_warnings (
+  id TEXT PRIMARY KEY,
+  scan_run_id TEXT NOT NULL REFERENCES scan_runs(id),
+  source_path TEXT NOT NULL,
+  virtual_path TEXT NOT NULL,
+  code TEXT NOT NULL,
+  message TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS scan_warnings_run_idx ON scan_warnings(scan_run_id);
+
 CREATE TABLE IF NOT EXISTS content_observations (
   id TEXT PRIMARY KEY,
   scan_run_id TEXT NOT NULL REFERENCES scan_runs(id),
@@ -90,4 +101,3 @@ CREATE TABLE IF NOT EXISTS exports (
   UNIQUE(processed_root_id, relative_path)
 );
 `;
-

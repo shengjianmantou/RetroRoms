@@ -147,6 +147,7 @@ export async function ingestLibrary(request: IngestRequest): Promise<IngestSumma
       }
     }
     curatedGroupCount = curatedGroups.length;
+    catalog.recordScanWarnings(scanRunId, warnings);
     catalog.completeScan(scanRunId, warnings.length);
     const library = catalog.getLibraryInfo();
     await writeManifest(manifestPath, {

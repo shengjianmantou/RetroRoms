@@ -58,6 +58,16 @@ test("rejects absolute observation paths", () => {
   catalog.close();
 });
 
+test("persists scan warning details", () => {
+  const catalog = new Catalog(":memory:");
+  catalog.initialize();
+  const scan = catalog.beginScan();
+  catalog.recordScanWarnings(scan, [{ sourcePath: "/source/archive.zip", virtualPath: "archive.zip::bad", code: "unsafe_path", message: "Unsafe member" }]);
+  catalog.completeScan(scan, 1);
+  assert.equal(catalog.listScanWarnings(scan)[0]?.code, "unsafe_path");
+  catalog.close();
+});
+
 test("persists preferred editions and content links across upserts", () => {
   const catalog = new Catalog(":memory:");
   catalog.initialize();
