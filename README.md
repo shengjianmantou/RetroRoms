@@ -50,3 +50,5 @@ npm run package:mac -- --output "/path/to/RetroRoms.app"
 ```
 
 Double-click `RetroRoms.command` inside the bundle and pass the processed-library path to launch the review UI. The bundle also includes the scan CLI for scripted ingestion. Windows/Linux native packaging and signed distribution are planned next.
+
+GitHub Actions produces the same bundle as a downloadable `RetroRoms-macos-mvp` artifact after tests pass.
