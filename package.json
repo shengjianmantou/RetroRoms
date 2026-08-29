@@ -12,7 +12,9 @@
     "test": "npm run test --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "package:mac": "node apps/desktop/package-macos.mjs"
+    "package:mac": "node apps/desktop/package-macos.mjs",
+    "package:linux": "node apps/desktop/package-platform.mjs linux",
+    "package:windows": "node apps/desktop/package-platform.mjs windows"
   },
   "engines": {
     "node": ">=22"
