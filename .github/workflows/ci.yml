@@ -36,3 +36,35 @@ jobs:
         with:
           name: RetroRoms-macos-mvp
           path: ${{ runner.temp }}/RetroRoms.app
+
+  package-linux:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --ignore-scripts
+      - run: npm run package:linux -- --output "$RUNNER_TEMP/RetroRoms-linux"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RetroRoms-linux-mvp
+          path: ${{ runner.temp }}/RetroRoms-linux
+
+  package-windows:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --ignore-scripts
+      - run: npm run package:windows -- --output "$env:RUNNER_TEMP\RetroRoms-windows"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RetroRoms-windows-mvp
+          path: ${{ runner.temp }}/RetroRoms-windows
