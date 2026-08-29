@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { basename, resolve } from "node:path";
 import { Catalog } from "@retroroms/catalog";
-import { createExportPlan, parseReleaseFilename, type ExportCandidate } from "@retroroms/core";
+import { createExportPlan, normalizeSeriesKey, parseReleaseFilename, type ExportCandidate } from "@retroroms/core";
 
 export interface UiServerOptions {
   libraryPath: string;
@@ -27,6 +27,7 @@ function observations(catalog: Catalog) {
       revision: release.revision ?? null,
       disc: release.disc ?? null,
       system,
+      seriesKey: normalizeSeriesKey(release.title || basename(item.relativePath)),
       artwork: null,
     };
   });

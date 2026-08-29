@@ -13,10 +13,10 @@ test("serves catalog observations and export previews", async () => {
   const summary = await ingestLibrary({ sourceRoots: [source], processedRoot: processed });
   const ui = await createUiServer({ libraryPath: summary.catalogPath, port: 0 });
   const address = ui.server.address(); const port = typeof address === "object" && address ? address.port : 0;
-  const observations = await (await fetch(`http://127.0.0.1:${port}/api/observations`)).json() as { observations: Array<{ id: string; title: string }> };
+  const observations = await (await fetch(`http://127.0.0.1:${port}/api/observations`)).json() as { observations: Array<{ id: string; title: string; seriesKey: string }> };
   assert.equal(observations.observations[0].title, "Super Metroid");
+  assert.equal(observations.observations[0].seriesKey, "super metroid");
   const preview = await (await fetch(`http://127.0.0.1:${port}/api/export-preview`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids: [observations.observations[0].id], policy: "compressed" }) })).json() as { plan: Array<{ outputFormat: string }> };
   assert.equal(preview.plan[0].outputFormat, "zip");
   await ui.close();
 });
-

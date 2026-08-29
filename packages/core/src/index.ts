@@ -8,3 +8,5 @@ export { choosePreferredEdition, parseReleaseFilename } from "./metadata.ts";
 export type { EditionCandidate, ParsedReleaseMetadata, PreferenceResult, ReleaseLanguage } from "./metadata.ts";
 export { createExportPlan, inferCompressedFormat } from "./packaging.ts";
 export type { ExportCandidate, ExportPlanItem, ObservedRepresentation, OutputPolicy, PackageFormat, SystemPackagingProfile } from "./packaging.ts";
+export { groupBySeries, normalizeSeriesKey } from "./series.ts";
+export type { SeriesGroup, SeriesMember } from "./series.ts";
