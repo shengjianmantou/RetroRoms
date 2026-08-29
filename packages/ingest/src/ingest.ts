@@ -31,6 +31,8 @@ export interface IngestSummary {
   catalogObservationCount: number;
   crossRootDuplicateGroups: number;
   curatedGroupCount: number;
+  verifiedCandidateCount: number;
+  preferredVerifiedGroupCount: number;
   warnings: ScanWarning[];
 }
 
@@ -67,6 +69,8 @@ export async function ingestLibrary(request: IngestRequest): Promise<IngestSumma
   const warnings: ScanWarning[] = [];
   let scannedContentCount = 0;
   let curatedGroupCount = 0;
+  let verifiedCandidateCount = 0;
+  let preferredVerifiedGroupCount = 0;
   const curationObservations: CurationObservation[] = [];
   const observationHashes = new Map<string, string>();
   let scanRunId: string | undefined;
@@ -121,6 +125,8 @@ export async function ingestLibrary(request: IngestRequest): Promise<IngestSumma
     }
 
     const curatedGroups = curateObservations(curationObservations, datIndex, request.languagePreference);
+    verifiedCandidateCount = curatedGroups.reduce((total, group) => total + group.candidates.filter((candidate) => candidate.verified).length, 0);
+    preferredVerifiedGroupCount = curatedGroups.filter((group) => group.candidates.find((candidate) => candidate.observationId === group.selectedObservationId)?.verified).length;
     for (const group of curatedGroups) {
       for (const candidate of group.candidates) {
         const contentSha256 = observationHashes.get(candidate.observationId);
@@ -160,6 +166,8 @@ export async function ingestLibrary(request: IngestRequest): Promise<IngestSumma
       catalogObservationCount: catalog.countObservations(),
       crossRootDuplicateGroups: catalog.countCrossRootDuplicateGroups(),
       curatedGroupCount,
+      verifiedCandidateCount,
+      preferredVerifiedGroupCount,
       warnings,
     };
   } catch (error) {

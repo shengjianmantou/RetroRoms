@@ -22,6 +22,8 @@ test("ingests sources and an existing processed library into a portable catalog"
   assert.equal(summary.catalogObservationCount, 2);
   assert.equal(summary.crossRootDuplicateGroups, 1);
   assert.equal(summary.curatedGroupCount, 1);
+  assert.equal(summary.verifiedCandidateCount, 0);
+  assert.equal(summary.preferredVerifiedGroupCount, 0);
   assert.equal(summary.warnings.length, 0);
 
   const catalog = new Catalog(summary.catalogPath);
