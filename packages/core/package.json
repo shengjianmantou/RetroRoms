@@ -1,0 +1,11 @@
+{
+  "name": "@retroroms/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test src/*.test.ts",
+    "typecheck": "node --check src/archive.ts && node --check src/hash.ts && node --check src/scanner.ts"
+  }
+}
+
