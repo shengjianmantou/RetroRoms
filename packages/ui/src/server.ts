@@ -1,9 +1,13 @@
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, stat } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
-import { basename, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { Catalog } from "@retroroms/catalog";
 import { createExportPlan, normalizeSeriesKey, parseReleaseFilename, type ExportCandidate } from "@retroroms/core";
+
+const execFileAsync = promisify(execFile);
 
 export interface UiServerOptions {
   libraryPath: string;
@@ -66,6 +70,44 @@ export async function createUiServer(options: UiServerOptions) {
           .map((item) => ({ id: item.id, systemKey: item.system, title: item.title, sourceVirtualPath: item.virtualPath, sourceSha256: item.sha256 }));
         const systems = [...new Set(candidates.map((candidate) => candidate.systemKey))].map((systemKey) => ({ systemKey, outputPolicy: payload.policy ?? "auto" as const }));
         json(response, { plan: createExportPlan(candidates, systems) });
+      } catch (error) {
+        json(response, { error: error instanceof Error ? error.message : String(error) }, 400);
+      }
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/export") {
+      let body = "";
+      for await (const chunk of request) {
+        body += chunk;
+        if (body.length > 2_000_000) { json(response, { error: "request too large" }, 413); return; }
+      }
+      try {
+        const payload = JSON.parse(body) as { ids?: string[]; policy?: "auto" | "compressed" | "uncompressed" | "preserve" };
+        const all = observations(catalog);
+        const selected = new Set(payload.ids ?? []);
+        const chosen = all.filter((item) => selected.has(item.id));
+        const candidates: ExportCandidate[] = chosen.map((item) => ({ id: item.id, systemKey: item.system, title: item.title, sourceVirtualPath: item.virtualPath, sourceSha256: item.sha256 }));
+        const systems = [...new Set(candidates.map((candidate) => candidate.systemKey))].map((systemKey) => ({ systemKey, outputPolicy: payload.policy ?? "auto" as const }));
+        const plan = createExportPlan(candidates, systems);
+        const processedRoot = dirname(dirname(resolve(options.libraryPath)));
+        const results = [];
+        for (const item of plan) {
+          const source = chosen.find((candidate) => candidate.id === item.candidateId);
+          if (!source) continue;
+          if (source.virtualPath.includes("::")) {
+            results.push({ ...item, status: "skipped", message: "Archive members require extraction/export worker support" });
+            continue;
+          }
+          const sourcePath = resolve(source.rootPath, source.relativePath);
+          const destination = resolve(processedRoot, item.destinationRelativePath);
+          if (!destination.startsWith(`${processedRoot}/`)) throw new Error("Unsafe export destination");
+          try { await stat(destination); results.push({ ...item, status: "skipped", message: "Destination already exists" }); continue; } catch { /* create new destination */ }
+          await mkdir(dirname(destination), { recursive: true });
+          if (item.outputFormat === "raw") await copyFile(sourcePath, destination);
+          else await execFileAsync("zip", ["-j", "-q", destination, sourcePath]);
+          results.push({ ...item, status: "exported" });
+        }
+        json(response, { results });
       } catch (error) {
         json(response, { error: error instanceof Error ? error.message : String(error) }, 400);
       }
