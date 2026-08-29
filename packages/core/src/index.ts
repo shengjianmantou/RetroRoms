@@ -12,3 +12,5 @@ export { groupBySeries, normalizeSeriesKey } from "./series.ts";
 export type { SeriesGroup, SeriesMember } from "./series.ts";
 export { DatIndex, parseDatXml } from "./dat.ts";
 export type { DatMatch, DatRomRecord } from "./dat.ts";
+export { curateObservations } from "./curation.ts";
+export type { CuratedCandidate, CuratedGroup, CurationObservation } from "./curation.ts";
