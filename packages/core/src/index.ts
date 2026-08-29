@@ -4,4 +4,7 @@ export type { ArchiveTool } from "./externalArchive.ts";
 export { BsdtarArchiveTool } from "./externalArchive.ts";
 export { DEFAULT_SCAN_LIMITS } from "./types.ts";
 export type { ContentHashes, DiscoveredContent, ScanLimits, ScanResult, ScanWarning } from "./types.ts";
-
+export { choosePreferredEdition, parseReleaseFilename } from "./metadata.ts";
+export type { EditionCandidate, ParsedReleaseMetadata, PreferenceResult, ReleaseLanguage } from "./metadata.ts";
+export { createExportPlan, inferCompressedFormat } from "./packaging.ts";
+export type { ExportCandidate, ExportPlanItem, ObservedRepresentation, OutputPolicy, PackageFormat, SystemPackagingProfile } from "./packaging.ts";
