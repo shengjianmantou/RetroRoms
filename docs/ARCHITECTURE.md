@@ -35,6 +35,10 @@ Calculates payload hashes, queries imported identification catalogs, parses rele
 
 Applies language, region, revision, and packaging preferences without deleting alternatives. User decisions override inferred choices and are persisted.
 
+### Ingestion coordinator
+
+Runs source scans and an existing processed-library scan under one catalog job. Source observations retain their selected root, processed observations use paths relative to the portable-library root, and the manifest is written only after the catalog scan completes.
+
 ### Export planner
 
 Produces a dry-run plan, reserves destination paths, transforms packaging, verifies results, commits atomically where supported, and updates the portable catalog snapshot last.

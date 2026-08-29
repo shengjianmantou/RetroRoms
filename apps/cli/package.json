@@ -1,0 +1,15 @@
+{
+  "name": "@retroroms/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@retroroms/ingest": "0.1.0"
+  },
+  "scripts": {
+    "scan": "node src/main.ts",
+    "test": "node --test src/*.test.ts",
+    "typecheck": "node --check src/main.ts"
+  }
+}
+

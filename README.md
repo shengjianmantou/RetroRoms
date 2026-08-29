@@ -30,5 +30,13 @@ docs               requirements, architecture, safety, and format policies
 
 ## Status
 
-The repository currently contains the product and architecture scaffold. Implementation will proceed in small, testable milestones beginning with inventory scanning and a read-only catalog.
+The repository currently contains a tested streaming inventory scanner, bounded nested-archive handling, a portable SQLite catalog, and an ingestion service that compares source roots with an existing processed library. A development-only CLI exercises this path with no export, move, or delete behavior.
 
+```bash
+npm run scan -w @retroroms/cli -- \
+  --source "/path/to/incoming-roms" \
+  --processed "/path/to/processed-library" \
+  --name "My ROM Library"
+```
+
+Do not use the development CLI on an irreplaceable collection without a separate backup. The browser UI, verified export engine, pinned archive-helper bundle, and signed macOS application are not implemented yet.

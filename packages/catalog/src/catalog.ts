@@ -25,6 +25,14 @@ export interface ObservationInput {
   sha256: string;
 }
 
+export interface LibraryInfo {
+  libraryUuid: string;
+  displayName: string;
+  schemaVersion: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 function now(): string {
   return new Date().toISOString();
 }
@@ -137,6 +145,49 @@ export class Catalog {
     if (result.changes !== 1) throw new Error(`Scan is not running: ${scanRunId}`);
   }
 
+  failScan(scanRunId: string, error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    this.database.prepare(`
+      UPDATE scan_runs SET status = 'failed', completed_at = ?, error_message = ?
+      WHERE id = ? AND status = 'running'
+    `).run(now(), message.slice(0, 4_000), scanRunId);
+  }
+
+  getLibraryInfo(): LibraryInfo {
+    const row = this.database.prepare(`
+      SELECT library_uuid, display_name, schema_version, created_at, updated_at FROM library WHERE id = 1
+    `).get() as {
+      library_uuid: string;
+      display_name: string;
+      schema_version: number;
+      created_at: string;
+      updated_at: string;
+    } | undefined;
+    if (!row) throw new Error("Catalog has not been initialized");
+    return {
+      libraryUuid: row.library_uuid,
+      displayName: row.display_name,
+      schemaVersion: row.schema_version,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  countObservations(): number {
+    const row = this.database.prepare("SELECT COUNT(*) AS count FROM content_observations").get() as { count: number };
+    return row.count;
+  }
+
+  countCrossRootDuplicateGroups(): number {
+    const row = this.database.prepare(`
+      SELECT COUNT(*) AS count FROM (
+        SELECT o.sha256 FROM content_observations o
+        GROUP BY o.sha256 HAVING COUNT(DISTINCT o.root_id) > 1
+      )
+    `).get() as { count: number };
+    return row.count;
+  }
+
   findBySha256(sha256: string): Array<{ rootKind: RootKind; relativePath: string; virtualPath: string }> {
     return this.database.prepare(`
       SELECT r.kind AS rootKind, o.relative_path AS relativePath, o.virtual_path AS virtualPath
@@ -149,4 +200,3 @@ export class Catalog {
     this.database.close();
   }
 }
-
