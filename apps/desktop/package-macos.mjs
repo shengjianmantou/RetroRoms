@@ -13,7 +13,7 @@ await cp(join(repositoryRoot, "packages"), join(resources, "packages"), { recurs
 await cp(join(repositoryRoot, "package.json"), join(resources, "package.json"));
 await cp(join(repositoryRoot, "package-lock.json"), join(resources, "package-lock.json"));
 await writeFile(join(contents, "Info.plist"), `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>CFBundleName</key><string>RetroRoms</string><key>CFBundleExecutable</key><string>RetroRoms</string></dict></plist>\n`);
-const launcher = `#!/bin/sh\nset -eu\nROOT="$(CDPATH= cd -- "$(dirname -- "$0")/Resources" && pwd)"\nif ! command -v node >/dev/null 2>&1; then echo "RetroRoms requires Node.js 22 or newer." >&2; exit 1; fi\nexec node "$ROOT/apps/cli/src/main.ts" "$@"\n`;
+const launcher = `#!/bin/sh\nset -eu\nROOT="$(CDPATH= cd -- "$(dirname -- "$0")/../Resources" && pwd)"\nif ! command -v node >/dev/null 2>&1; then echo "RetroRoms requires Node.js 22 or newer." >&2; exit 1; fi\nif [ "$#" -eq 1 ]; then exec node "$ROOT/apps/desktop/launch.mjs" "$1"; fi\nexec node "$ROOT/apps/cli/src/main.ts" "$@"\n`;
 await writeFile(join(macos, "RetroRoms"), launcher, { mode: 0o755 });
 await writeFile(join(output, "RetroRoms.command"), `#!/bin/sh\nexec "$(dirname "$0")/Contents/MacOS/RetroRoms" "$@"\n`, { mode: 0o755 });
 console.log(`Created macOS MVP bundle at ${output}`);
