@@ -112,7 +112,14 @@ export async function createUiServer(options: UiServerOptions) {
           const sourcePath = resolve(source.rootPath, source.relativePath);
           const destination = resolve(processedRoot, item.destinationRelativePath);
           if (!destination.startsWith(`${processedRoot}/`)) throw new Error("Unsafe export destination");
-          try { await stat(destination); results.push({ ...item, status: "skipped", message: "Destination already exists" }); continue; } catch { /* create new destination */ }
+          try {
+            await stat(destination);
+            const existingSha256 = createHash("sha256").update(await readFile(destination)).digest("hex");
+            results.push(existingSha256 === source.sha256
+              ? { ...item, status: "skip-existing", message: "Destination already contains the source content" }
+              : { ...item, status: "conflict", message: "Destination exists with different content; no overwrite" });
+            continue;
+          } catch { /* create new destination */ }
           await mkdir(dirname(destination), { recursive: true });
           const members = source.virtualPath.split("::").slice(1);
           const temporaryRoot = members.length ? await mkdtemp(join(processedRoot, ".rom-curator-export-")) : undefined;

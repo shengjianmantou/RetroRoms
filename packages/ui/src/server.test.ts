@@ -25,5 +25,7 @@ test("serves catalog observations and export previews", async () => {
   const exported = await (await fetch(`http://127.0.0.1:${port}/api/export`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids: [observations.observations[0].id], policy: "uncompressed" }) })).json() as { results: Array<{ status: string; destinationRelativePath: string }> };
   assert.equal(exported.results[0].status, "exported");
   assert.equal(await readFile(join(processed, exported.results[0].destinationRelativePath), "utf8"), "rom");
+  const retry = await (await fetch(`http://127.0.0.1:${port}/api/export`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids: [observations.observations[0].id], policy: "uncompressed" }) })).json() as { results: Array<{ status: string }> };
+  assert.equal(retry.results[0].status, "skip-existing");
   await ui.close();
 });
