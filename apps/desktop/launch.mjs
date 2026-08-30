@@ -29,6 +29,9 @@ async function chooseLanguages() {
   const codes = { English: "en", Chinese: "zh", Japanese: "ja" };
   return names.map((name) => codes[name]).filter(Boolean);
 }
+async function notify(message) {
+  if (process.platform === "darwin") await execFileAsync("osascript", ["-e", `display notification \"${message.replaceAll('"', '\\"')}\" with title \"RetroRoms\"`]);
+}
 let library = process.argv[2];
 if (!library) {
   const sourceRoots = [await chooseDirectory("Choose a ROM source folder (it will remain read-only)")];
@@ -37,7 +40,9 @@ if (!library) {
   const datFiles = [];
   while (await shouldAddDat()) datFiles.push({ path: await chooseFile("Choose a ROM DAT file") });
   const languagePreference = await chooseLanguages();
+  await notify(`Scanning ${sourceRoots.length} source folder${sourceRoots.length === 1 ? "" : "s"}. Source files remain read-only.`);
   const summary = await ingestLibrary({ sourceRoots, processedRoot: processed, datFiles, languagePreference: languagePreference.length ? languagePreference : undefined });
+  await notify(`Scan finished: ${summary.scannedContentCount} files, ${summary.curatedGroupCount} curated games, ${summary.warnings.length} warnings.`);
   library = summary.catalogPath;
 }
 if (!library.endsWith(".sqlite")) library = join(library, ".rom-curator", "catalog.sqlite");
