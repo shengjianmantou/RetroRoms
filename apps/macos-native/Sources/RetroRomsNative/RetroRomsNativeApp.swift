@@ -29,9 +29,9 @@ struct ContentView: View {
         Divider()
         Button("Choose ROM folders…") { model.chooseSources() }
         Text(model.sourcePaths.isEmpty ? "No source folders" : model.sourcePaths.joined(separator: "\n")).font(.caption).foregroundStyle(.secondary).lineLimit(4)
-        Button("Choose processed library…") { model.chooseProcessed() }
-        Text(model.processedPath.isEmpty ? "No processed library" : model.processedPath).font(.caption).foregroundStyle(.secondary).lineLimit(3)
-        Button(model.isScanning ? "Scanning…" : "Scan library") { Task { await model.scan() } }.disabled(model.isScanning || model.sourcePaths.isEmpty || model.processedPath.isEmpty)
+        Button("Choose export library…") { model.chooseProcessed() }
+        Text(model.processedPath.isEmpty ? "Using a local working catalog until export" : model.processedPath).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+        Button(model.isScanning ? "Scanning…" : "Rescan library") { Task { await model.scan() } }.disabled(model.isScanning || model.sourcePaths.isEmpty)
         Divider()
         Button("Artwork settings…") { showArtworkKey = true }.disabled(model.catalogURL == nil)
         Text("Source folders are read-only.").font(.caption).foregroundStyle(.secondary)
@@ -47,8 +47,8 @@ struct ContentView: View {
           Picker("View", selection: $model.view) { Text("Grid").tag(CatalogView.grid); Text("List").tag(CatalogView.list) }.pickerStyle(.segmented).frame(width: 135)
           Button("Select all") { model.selected = Set(model.items.map(\.id)) }.disabled(model.items.isEmpty)
           Button("Clear") { model.selected.removeAll() }.disabled(model.selected.isEmpty)
-          Button("Scrape covers") { Task { await model.scrapeArtwork() } }.disabled(model.selected.isEmpty)
-          Button("Export selected") { Task { await model.exportSelected() } }.disabled(model.selected.isEmpty)
+          Button("Scrape artwork") { Task { await model.scrapeArtwork() } }.disabled(model.selected.isEmpty)
+          Button("Export selected") { Task { await model.exportSelected() } }.disabled(model.selected.isEmpty || model.processedPath.isEmpty)
         }.padding()
         Divider()
         TextField("Filter games, systems…", text: $query).textFieldStyle(.roundedBorder).padding()
@@ -86,17 +86,18 @@ struct GameCard: View {
   @Published var selected = Set<String>(); @Published var view = CatalogView.grid; @Published var status = "Choose your ROM folders to begin."
   @Published var isScanning = false; @Published var isLoading = false
   var catalogURL: URL?; private var server: Process?; private let port = 4189
-  func chooseSources() { let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = true; if panel.runModal() == .OK { sourcePaths = panel.urls.map(\.path) } }
-  func chooseProcessed() { let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true; if panel.runModal() == .OK { processedPath = panel.url?.path ?? "" } }
+  func chooseSources() { let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = true; if panel.runModal() == .OK { sourcePaths = panel.urls.map(\.path); Task { await scan() } } }
+  func chooseProcessed() { let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true; if panel.runModal() == .OK { processedPath = panel.url?.path ?? ""; if !sourcePaths.isEmpty { Task { await scan() } } } }
   func toggle(_ id: String) { if selected.contains(id) { selected.remove(id) } else { selected.insert(id) } }
   func artworkURL(_ item: CatalogItem) -> URL? { guard item.artwork != nil else { return nil }; return URL(string: "http://127.0.0.1:\(port)/api/artwork/\(item.sha256)") }
-  func scan() async { guard let root = runtimeRoot() else { status = "Could not locate the RetroRoms runtime."; return }; isScanning = true; defer { isScanning = false }; status = "Scanning source folders safely…"; let args = ["node", root.appendingPathComponent("apps/cli/src/main.ts").path] + sourcePaths.flatMap { ["--source", $0] } + ["--processed", processedPath]; do { _ = try await run("/usr/bin/env", args); catalogURL = URL(fileURLWithPath: processedPath).appendingPathComponent(".rom-curator/catalog.sqlite"); try await startServer(root); await reload(); status = "Scan complete: \(items.count) games." } catch { status = "Scan failed: \(error.localizedDescription)" } }
+  func scan() async { guard let root = runtimeRoot() else { status = "Could not locate the RetroRoms runtime."; return }; isScanning = true; defer { isScanning = false }; let catalogRoot = processedPath.isEmpty ? workingCatalogPath() : processedPath; status = "Scanning source folders safely…"; let args = ["node", root.appendingPathComponent("apps/cli/src/main.ts").path] + sourcePaths.flatMap { ["--source", $0] } + ["--processed", catalogRoot]; do { _ = try await run("/usr/bin/env", args); catalogURL = URL(fileURLWithPath: catalogRoot).appendingPathComponent(".rom-curator/catalog.sqlite"); try await startServer(root); await reload(); status = "Scan complete: \(items.count) games. Select games, then choose Scrape covers." } catch { status = "Scan failed: \(error.localizedDescription)" } }
   func reload() async { isLoading = true; defer { isLoading = false }; do { let data = try await URLSession.shared.data(from: URL(string: "http://127.0.0.1:\(port)/api/observations")!).0; items = try JSONDecoder().decode(CatalogResponse.self, from: data).observations; selected.formIntersection(Set(items.map(\.id))) } catch { status = "Catalog error: \(error.localizedDescription)" } }
   func saveArtworkKey(_ key: String) async { await post("/api/artwork/settings", value: ["theGamesDbApiKey": key]); status = "Artwork key saved locally." }
   func scrapeArtwork() async { status = "Scraping artwork…"; await post("/api/artwork/scrape", value: ["ids": Array(selected)]); await reload(); status = "Artwork scrape finished." }
-  func exportSelected() async { status = "Exporting selected games…"; await post("/api/export", value: ["ids": Array(selected), "policy": "auto", "overwriteConflicts": false]); status = "Export finished. Source folders were not changed." }
+  func exportSelected() async { guard !processedPath.isEmpty else { status = "Choose an export library before exporting."; return }; status = "Exporting selected games…"; await post("/api/export", value: ["ids": Array(selected), "policy": "auto", "overwriteConflicts": false]); status = "Export finished. Source folders were not changed." }
   private func post(_ endpoint: String, value: [String: Any]) async { guard let url = URL(string: "http://127.0.0.1:\(port)\(endpoint)"), let data = try? JSONSerialization.data(withJSONObject: value) else { return }; var request = URLRequest(url: url); request.httpMethod = "POST"; request.setValue("application/json", forHTTPHeaderField: "Content-Type"); request.httpBody = data; _ = try? await URLSession.shared.data(for: request) }
   private func startServer(_ root: URL) async throws { server?.terminate(); let task = Process(); task.executableURL = URL(fileURLWithPath: "/usr/bin/env"); task.arguments = ["node", root.appendingPathComponent("packages/ui/src/server.ts").path, "--library", catalogURL!.path, "--port", "\(port)"]; try task.run(); server = task; try await Task.sleep(for: .milliseconds(350)) }
+  private func workingCatalogPath() -> String { let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!.appendingPathComponent("RetroRoms/working-library", isDirectory: true); try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true); return base.path }
   private func runtimeRoot() -> URL? { if let custom = ProcessInfo.processInfo.environment["RETROROMS_HOME"] { return URL(fileURLWithPath: custom) }; var candidate = URL(fileURLWithPath: FileManager.default.currentDirectoryPath); for _ in 0..<5 { if FileManager.default.fileExists(atPath: candidate.appendingPathComponent("package.json").path) { return candidate }; candidate.deleteLastPathComponent() }; return Bundle.main.resourceURL }
   private func run(_ executable: String, _ arguments: [String]) async throws -> String { let task = Process(); let output = Pipe(); task.executableURL = URL(fileURLWithPath: executable); task.arguments = arguments; task.standardOutput = output; task.standardError = output; try task.run(); task.waitUntilExit(); let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self); guard task.terminationStatus == 0 || task.terminationStatus == 2 else { throw NSError(domain: "RetroRoms", code: Int(task.terminationStatus), userInfo: [NSLocalizedDescriptionKey: text]) }; return text }
 }
