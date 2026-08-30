@@ -52,3 +52,7 @@ npm run package:mac -- --output "/path/to/RetroRoms.app"
 Double-click `RetroRoms.command` inside the bundle and pass the processed-library path to launch the review UI. The bundle also includes the scan CLI for scripted ingestion. Windows/Linux native packaging and signed distribution are planned next.
 
 GitHub Actions produces the same bundle as a downloadable `RetroRoms-macos-mvp` artifact after tests pass.
+
+### macOS no-terminal first run
+
+Double-click `RetroRoms.command` without arguments. RetroRoms opens native dialogs to select one or more source ROM folders, a processed-library folder, optional DAT files, and an English/Chinese/Japanese preference order. It scans source folders read-only, opens the browser review UI, and lets you filter, select preferred editions, preview packaging, and run a confirmed export to the processed library.
