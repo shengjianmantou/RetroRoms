@@ -29,6 +29,7 @@ struct ContentView: View {
         Divider()
         Button("Choose ROM folders…") { model.chooseSources() }
         Text(model.sourcePaths.isEmpty ? "No source folders" : model.sourcePaths.joined(separator: "\n")).font(.caption).foregroundStyle(.secondary).lineLimit(4)
+        Button(model.isScanning ? "Loading ROMs…" : "Load ROMs") { Task { await model.scan() } }.disabled(model.sourcePaths.isEmpty || model.isScanning)
         Text("Choose an export folder only when you click Export selected.").font(.caption).foregroundStyle(.secondary)
         Button(model.isScanning ? "Scanning…" : "Rescan library") { Task { await model.scan() } }.disabled(model.isScanning || model.sourcePaths.isEmpty)
         Divider()
@@ -85,7 +86,7 @@ struct GameCard: View {
   @Published var selected = Set<String>(); @Published var view = CatalogView.grid; @Published var status = "Choose your ROM folders to begin."
   @Published var isScanning = false; @Published var isLoading = false
   var catalogURL: URL?; private var server: Process?; private let port = 4189
-  func chooseSources() { let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = true; if panel.runModal() == .OK { sourcePaths = panel.urls.map(\.path); processedPath = ""; Task { await scan() } } }
+  func chooseSources() { let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = true; if panel.runModal() == .OK { sourcePaths = panel.urls.map(\.path); processedPath = ""; status = "Folders selected. Click Load ROMs to scan them." } }
   func loadFromLaunchArguments() async { let arguments = ProcessInfo.processInfo.arguments; guard let index = arguments.firstIndex(of: "--source"), arguments.indices.contains(index + 1), sourcePaths.isEmpty else { return }; sourcePaths = [arguments[index + 1]]; if let processedIndex = arguments.firstIndex(of: "--processed"), arguments.indices.contains(processedIndex + 1) { processedPath = arguments[processedIndex + 1] }; await scan() }
   private func chooseExportDestination() -> Bool { let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true; panel.message = "Choose the processed RetroRoms library folder"; guard panel.runModal() == .OK, let path = panel.url?.path else { return false }; processedPath = path; return true }
   func toggle(_ id: String) { if selected.contains(id) { selected.remove(id) } else { selected.insert(id) } }
