@@ -99,5 +99,13 @@ struct GameCard: View {
   private func workingCatalogPath() -> String { let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!.appendingPathComponent("RetroRoms/working-library", isDirectory: true); try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true); return base.path }
   private func nodeExecutable() -> String? { let environment = ProcessInfo.processInfo.environment; let candidates = [environment["RETROROMS_NODE"], "/opt/homebrew/bin/node", "/usr/local/bin/node", "/usr/bin/node"].compactMap { $0 }; return candidates.first { FileManager.default.isExecutableFile(atPath: $0) } }
   private func runtimeRoot() -> URL? { if let custom = ProcessInfo.processInfo.environment["RETROROMS_HOME"] { return URL(fileURLWithPath: custom) }; var candidate = URL(fileURLWithPath: FileManager.default.currentDirectoryPath); for _ in 0..<5 { if FileManager.default.fileExists(atPath: candidate.appendingPathComponent("package.json").path) { return candidate }; candidate.deleteLastPathComponent() }; return Bundle.main.resourceURL }
-  private func run(_ executable: String, _ arguments: [String]) async throws -> String { let task = Process(); let output = Pipe(); task.executableURL = URL(fileURLWithPath: executable); task.arguments = arguments; task.standardOutput = output; task.standardError = output; try task.run(); task.waitUntilExit(); let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self); guard task.terminationStatus == 0 || task.terminationStatus == 2 else { throw NSError(domain: "RetroRoms", code: Int(task.terminationStatus), userInfo: [NSLocalizedDescriptionKey: text]) }; return text }
+  private func run(_ executable: String, _ arguments: [String]) async throws -> String { try await withCheckedThrowingContinuation { continuation in
+    let task = Process(); let output = Pipe(); task.executableURL = URL(fileURLWithPath: executable); task.arguments = arguments; task.standardOutput = output; task.standardError = output
+    task.terminationHandler = { process in
+      let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+      if process.terminationStatus == 0 || process.terminationStatus == 2 { continuation.resume(returning: text) }
+      else { continuation.resume(throwing: NSError(domain: "RetroRoms", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: text])) }
+    }
+    do { try task.run() } catch { continuation.resume(throwing: error) }
+  } }
 }
