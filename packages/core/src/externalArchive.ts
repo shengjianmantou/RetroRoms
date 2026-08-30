@@ -129,7 +129,10 @@ export class BsdtarArchiveTool implements ArchiveTool {
     if (!isSafeMemberPath(member)) {
       throw new ArchiveInspectionError("unsafe_path", `Archive member has an unsafe path: ${member}`);
     }
-    return captureToFile(this.executable, ["-xOf", archivePath, "--", member], destination, {
+    // libarchive interprets archive member operands as glob patterns. ROM names
+    // commonly contain brackets (for example "[En]"); pass an escaped literal.
+    const literalMember = member.replace(/([\\*?\[\]])/g, "\\$1");
+    return captureToFile(this.executable, ["-xOf", archivePath, "--", literalMember], destination, {
       maxBytes: limits.maxEntryBytes,
       timeoutMs: limits.archiveCommandTimeoutMs,
     });

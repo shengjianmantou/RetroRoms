@@ -228,10 +228,6 @@ export async function createUiServer(options: UiServerOptions) {
         for (const item of plan) {
           const source = chosen.find((candidate) => candidate.id === item.candidateId);
           if (!source) continue;
-          if (source.virtualPath.includes("::")) {
-            results.push({ ...item, status: "skipped", message: "Archive members require extraction/export worker support" });
-            continue;
-          }
           const sourcePath = resolve(source.rootPath, source.relativePath);
           const destination = resolve(processedRoot, item.destinationRelativePath);
           if (!destination.startsWith(`${processedRoot}/`)) throw new Error("Unsafe export destination");

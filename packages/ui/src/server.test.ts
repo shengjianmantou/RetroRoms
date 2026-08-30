@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
+import { promisify } from "node:util";
 import test from "node:test";
 import { ingestLibrary } from "../../ingest/src/ingest.ts";
 import { createUiServer } from "./server.ts";
+
+const execFileAsync = promisify(execFile);
 
 test("serves catalog observations and export previews", async () => {
   const root = await mkdtemp(join(tmpdir(), "retroroms-ui-"));
@@ -48,4 +52,25 @@ test("serves catalog observations and export previews", async () => {
   const overwrite = await (await fetch(`http://127.0.0.1:${port}/api/export`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids: [observations.observations[0].id], policy: "uncompressed", overwriteConflicts: true }) })).json() as { results: Array<{ status: string }> };
   assert.equal(overwrite.results[0].status, "exported");
   await ui.close();
+});
+
+test("exports a single ROM selected from a ZIP archive", async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "retroroms-ui-archive-"));
+  const source = join(root, "source"); const system = join(source, "snes"); const processed = join(root, "processed");
+  await mkdir(system, { recursive: true });
+  const game = join(system, "Super Metroid (USA) [En].sfc");
+  const archive = join(system, "collection.zip");
+  await writeFile(game, "archived-rom");
+  await execFileAsync("zip", ["-j", basename(archive), basename(game)], { cwd: system });
+  await rm(game);
+  const summary = await ingestLibrary({ sourceRoots: [source], processedRoot: processed });
+  const ui = await createUiServer({ libraryPath: summary.catalogPath, port: 0 });
+  context.after(() => ui.close());
+  const address = ui.server.address(); const port = typeof address === "object" && address ? address.port : 0;
+  const observations = await (await fetch(`http://127.0.0.1:${port}/api/observations`)).json() as { observations: Array<{ id: string; virtualPath: string }> };
+  assert.equal(observations.observations.length, 1, JSON.stringify({ observations, summary }));
+  assert.match(observations.observations[0].virtualPath, /collection\.zip::/);
+  const result = await (await fetch(`http://127.0.0.1:${port}/api/export`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids: [observations.observations[0].id], policy: "uncompressed" }) })).json() as { results: Array<{ status: string; destinationRelativePath: string }> };
+  assert.equal(result.results[0].status, "exported", JSON.stringify(result));
+  assert.equal(await readFile(join(processed, result.results[0].destinationRelativePath), "utf8"), "archived-rom");
 });
