@@ -55,7 +55,7 @@ struct ContentView: View {
         else if model.items.isEmpty { Spacer(); VStack(spacing: 10) { Image(systemName: "tray").font(.largeTitle); Text("No catalog loaded").font(.title3); Text("Choose folders and scan to begin.").foregroundStyle(.secondary) }; Spacer() }
         else if model.view == .grid { grid(filtered) } else { list(filtered) }
       }
-    }.sheet(isPresented: $showArtworkKey) {
+    }.task { await model.loadFromLaunchArguments() }.sheet(isPresented: $showArtworkKey) {
       VStack(alignment: .leading, spacing: 16) {
         Text("TheGamesDB artwork").font(.title2.bold())
         Text("Paste your API key. It stays in this processed library on this Mac.").foregroundStyle(.secondary)
@@ -86,6 +86,7 @@ struct GameCard: View {
   @Published var isScanning = false; @Published var isLoading = false
   var catalogURL: URL?; private var server: Process?; private let port = 4189
   func chooseSources() { let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = true; if panel.runModal() == .OK { sourcePaths = panel.urls.map(\.path); processedPath = ""; Task { await scan() } } }
+  func loadFromLaunchArguments() async { let arguments = ProcessInfo.processInfo.arguments; guard let index = arguments.firstIndex(of: "--source"), arguments.indices.contains(index + 1), sourcePaths.isEmpty else { return }; sourcePaths = [arguments[index + 1]]; if let processedIndex = arguments.firstIndex(of: "--processed"), arguments.indices.contains(processedIndex + 1) { processedPath = arguments[processedIndex + 1] }; await scan() }
   private func chooseExportDestination() -> Bool { let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true; panel.message = "Choose the processed RetroRoms library folder"; guard panel.runModal() == .OK, let path = panel.url?.path else { return false }; processedPath = path; return true }
   func toggle(_ id: String) { if selected.contains(id) { selected.remove(id) } else { selected.insert(id) } }
   func artworkURL(_ item: CatalogItem) -> URL? { guard item.artwork != nil else { return nil }; return URL(string: "http://127.0.0.1:\(port)/api/artwork/\(item.sha256)") }
