@@ -11,11 +11,16 @@ async function chooseDirectory(prompt) {
   const { stdout } = await execFileAsync("osascript", ["-e", `POSIX path of (choose folder with prompt \"${prompt}\")`]);
   return stdout.trim().replace(/\/$/, "");
 }
+async function shouldAddAnotherSource() {
+  const { stdout } = await execFileAsync("osascript", ["-e", 'button returned of (display dialog "Add another ROM source folder?" buttons {"Continue", "Add Another"} default button "Continue")']);
+  return stdout.trim() === "Add Another";
+}
 let library = process.argv[2];
 if (!library) {
-  const source = await chooseDirectory("Choose the ROM source folder (it will remain read-only)");
+  const sourceRoots = [await chooseDirectory("Choose a ROM source folder (it will remain read-only)")];
+  while (await shouldAddAnotherSource()) sourceRoots.push(await chooseDirectory("Choose another ROM source folder (it will remain read-only)"));
   const processed = await chooseDirectory("Choose or create the processed RetroRoms library folder");
-  const summary = await ingestLibrary({ sourceRoots: [source], processedRoot: processed });
+  const summary = await ingestLibrary({ sourceRoots, processedRoot: processed });
   library = summary.catalogPath;
 }
 if (!library.endsWith(".sqlite")) library = join(library, ".rom-curator", "catalog.sqlite");
