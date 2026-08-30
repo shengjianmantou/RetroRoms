@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
-import { copyFile, mkdir, mkdtemp, readFile, rm, stat, unlink } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -20,7 +21,7 @@ function json(response: import("node:http").ServerResponse, value: unknown, stat
   response.end(JSON.stringify(value));
 }
 
-function observations(catalog: Catalog) {
+function observations(catalog: Catalog, libraryPath: string) {
   const editionsByHash = new Map(catalog.listEditions().map((edition) => [edition.contentSha256, edition]));
   return catalog.listObservations().map((item) => {
     const release = parseReleaseFilename(item.virtualPath);
@@ -37,9 +38,46 @@ function observations(catalog: Catalog) {
       seriesKey: edition?.seriesName || normalizeSeriesKey(edition?.title || release.title || basename(item.relativePath)),
       preferred: edition?.preferred ?? false,
       identitySource: edition?.identitySource ?? "filename",
-      artwork: null,
+      artwork: existsSync(join(artworkDirectory(libraryPath), `${item.sha256}.img`)) ? `/api/artwork/${item.sha256}` : null,
     };
   });
+}
+
+function processedRootFor(libraryPath: string): string {
+  return dirname(dirname(resolve(libraryPath)));
+}
+
+function artworkDirectory(libraryPath: string): string {
+  return join(processedRootFor(libraryPath), ".rom-curator", "artwork");
+}
+
+async function scrapeArtwork(title: string, sha256: string, libraryPath: string): Promise<{ status: string; message?: string }> {
+  const query = new URL("https://en.wikipedia.org/w/api.php");
+  query.searchParams.set("action", "query");
+  query.searchParams.set("generator", "search");
+  query.searchParams.set("gsrsearch", `${title} video game cover`);
+  query.searchParams.set("gsrnamespace", "6");
+  query.searchParams.set("gsrlimit", "1");
+  query.searchParams.set("prop", "imageinfo");
+  query.searchParams.set("iiprop", "url");
+  query.searchParams.set("iiurlwidth", "480");
+  query.searchParams.set("format", "json");
+  query.searchParams.set("origin", "*");
+  const response = await fetch(query, { headers: { "user-agent": "RetroRoms local artwork curator" } });
+  if (!response.ok) return { status: "failed", message: `Artwork search returned ${response.status}` };
+  const data = await response.json() as { query?: { pages?: Record<string, { imageinfo?: Array<{ thumburl?: string; url?: string }> }> } };
+  const image = Object.values(data.query?.pages ?? {}).flatMap((page) => page.imageinfo ?? [])[0];
+  const imageUrl = image?.thumburl ?? image?.url;
+  if (!imageUrl) return { status: "not-found", message: "No public artwork match found" };
+  const imageResponse = await fetch(imageUrl, { headers: { "user-agent": "RetroRoms local artwork curator" } });
+  if (!imageResponse.ok) return { status: "failed", message: `Artwork download returned ${imageResponse.status}` };
+  const bytes = Buffer.from(await imageResponse.arrayBuffer());
+  if (bytes.length > 5_000_000) return { status: "failed", message: "Artwork exceeds 5 MB limit" };
+  const directory = artworkDirectory(libraryPath);
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, `${sha256}.img`), bytes, { mode: 0o600 });
+  await writeFile(join(directory, `${sha256}.json`), JSON.stringify({ contentType: imageResponse.headers.get("content-type") ?? "image/jpeg", sourceUrl: imageUrl }), { mode: 0o600 });
+  return { status: "scraped" };
 }
 
 type ProfilePayload = Record<string, { outputPolicy?: OutputPolicy; compressedFormat?: PackageFormat }>;
@@ -62,7 +100,7 @@ export async function createUiServer(options: UiServerOptions) {
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/observations") {
-      json(response, { observations: observations(catalog) });
+      json(response, { observations: observations(catalog, options.libraryPath) });
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/exports") {
@@ -81,6 +119,38 @@ export async function createUiServer(options: UiServerOptions) {
       json(response, { warnings: catalog.listScanWarnings(url.searchParams.get("scan") ?? undefined) });
       return;
     }
+    const artworkMatch = url.pathname.match(/^\/api\/artwork\/([a-f0-9]{64})$/);
+    if (request.method === "GET" && artworkMatch) {
+      try {
+        const directory = artworkDirectory(options.libraryPath);
+        const metadata = JSON.parse(await readFile(join(directory, `${artworkMatch[1]}.json`), "utf8")) as { contentType?: string };
+        const image = await readFile(join(directory, `${artworkMatch[1]}.img`));
+        response.writeHead(200, { "content-type": metadata.contentType ?? "image/jpeg", "cache-control": "private, max-age=86400" });
+        response.end(image);
+      } catch {
+        json(response, { error: "artwork not found" }, 404);
+      }
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/artwork/scrape") {
+      let body = "";
+      for await (const chunk of request) {
+        body += chunk;
+        if (body.length > 200_000) { json(response, { error: "request too large" }, 413); return; }
+      }
+      try {
+        const payload = JSON.parse(body) as { ids?: string[] };
+        const selected = new Set(payload.ids ?? []);
+        const chosen = observations(catalog, options.libraryPath).filter((item) => selected.has(item.id));
+        if (chosen.length > 200) throw new Error("Artwork scraping is limited to 200 selected games at a time");
+        const results = [];
+        for (const item of chosen) results.push({ id: item.id, ...(await scrapeArtwork(item.title, item.sha256, options.libraryPath)) });
+        json(response, { results });
+      } catch (error) {
+        json(response, { error: error instanceof Error ? error.message : String(error) }, 400);
+      }
+      return;
+    }
     if (request.method === "POST" && url.pathname === "/api/export-preview") {
       let body = "";
       for await (const chunk of request) {
@@ -90,7 +160,7 @@ export async function createUiServer(options: UiServerOptions) {
       try {
         const payload = JSON.parse(body) as { ids?: string[]; policy?: OutputPolicy; profiles?: ProfilePayload; overwriteConflicts?: boolean };
         const selected = new Set(payload.ids ?? []);
-        const candidates: ExportCandidate[] = observations(catalog)
+        const candidates: ExportCandidate[] = observations(catalog, options.libraryPath)
           .filter((item) => selected.has(item.id))
           .map((item) => ({ id: item.id, systemKey: item.system, title: item.title, sourceVirtualPath: item.virtualPath, sourceSha256: item.sha256 }));
         json(response, { plan: createExportPlan(candidates, profilesFor(candidates, payload)) });
@@ -107,7 +177,7 @@ export async function createUiServer(options: UiServerOptions) {
       }
       try {
         const payload = JSON.parse(body) as { ids?: string[]; policy?: OutputPolicy; profiles?: ProfilePayload };
-        const all = observations(catalog);
+        const all = observations(catalog, options.libraryPath);
         const selected = new Set(payload.ids ?? []);
         const chosen = all.filter((item) => selected.has(item.id));
         const candidates: ExportCandidate[] = chosen.map((item) => ({ id: item.id, systemKey: item.system, title: item.title, sourceVirtualPath: item.virtualPath, sourceSha256: item.sha256 }));

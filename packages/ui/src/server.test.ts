@@ -27,6 +27,8 @@ test("serves catalog observations and export previews", async () => {
   assert.equal(scans.scans[0]?.status, "completed");
   const warnings = await (await fetch(`http://127.0.0.1:${port}/api/warnings`)).json() as { warnings: unknown[] };
   assert.equal(warnings.warnings.length, 0);
+  const scrape = await (await fetch(`http://127.0.0.1:${port}/api/artwork/scrape`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids: [] }) })).json() as { results: unknown[] };
+  assert.equal(scrape.results.length, 0);
   const profilePreview = await (await fetch(`http://127.0.0.1:${port}/api/export-preview`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids: [observations.observations[0].id], profiles: { unknown: { outputPolicy: "uncompressed" } } }) })).json() as { plan: Array<{ outputFormat: string }> };
   assert.equal(profilePreview.plan[0].outputFormat, "raw");
   const exported = await (await fetch(`http://127.0.0.1:${port}/api/export`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids: [observations.observations[0].id], policy: "uncompressed" }) })).json() as { results: Array<{ status: string; destinationRelativePath: string }> };
