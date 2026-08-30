@@ -1,4 +1,5 @@
 import { pathToFileURL } from "node:url";
+import { writeFileSync } from "node:fs";
 import { ingestLibrary } from "@retroroms/ingest";
 
 export interface CliArguments {
@@ -8,6 +9,7 @@ export interface CliArguments {
   datFiles: string[];
   datSystems: Record<string, string>;
   languagePreference?: Array<"en" | "zh" | "ja">;
+  progressFile?: string;
 }
 
 const USAGE = `Usage:
@@ -23,6 +25,7 @@ export function parseArguments(argv: string[]): CliArguments {
   const datFiles: string[] = [];
   const datSystems: Record<string, string> = {};
   let languagePreference: Array<"en" | "zh" | "ja"> | undefined;
+  let progressFile: string | undefined;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--source") sourceRoots.push(argv[++index] ?? "");
@@ -40,19 +43,20 @@ export function parseArguments(argv: string[]): CliArguments {
       if (values.some((value) => !["en", "zh", "ja"].includes(value))) throw new Error("--languages accepts en, zh, and ja");
       languagePreference = values as Array<"en" | "zh" | "ja">;
     }
+    else if (argument === "--progress-file") progressFile = argv[++index];
     else if (argument === "--help" || argument === "-h") throw new Error(USAGE);
     else throw new Error(`Unknown argument: ${argument}\n\n${USAGE}`);
   }
   if (sourceRoots.length === 0 || sourceRoots.some((item) => !item) || !processedRoot) {
     throw new Error(USAGE);
   }
-  return { sourceRoots, processedRoot, displayName, datFiles, datSystems, languagePreference };
+  return { sourceRoots, processedRoot, displayName, datFiles, datSystems, languagePreference, ...(progressFile ? { progressFile } : {}) };
 }
 
 async function main(): Promise<void> {
   try {
     const request = parseArguments(process.argv.slice(2));
-    const summary = await ingestLibrary({ ...request, datFiles: request.datFiles.map((path) => ({ path, systemKey: request.datSystems[path] })) });
+    const summary = await ingestLibrary({ ...request, datFiles: request.datFiles.map((path) => ({ path, systemKey: request.datSystems[path] })), scannerOptions: request.progressFile ? { onProgress: (progress) => writeFileSync(request.progressFile!, JSON.stringify(progress), { mode: 0o600 }) } : undefined });
     process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
     if (summary.warnings.length > 0) process.exitCode = 2;
   } catch (error) {

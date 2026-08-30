@@ -19,6 +19,7 @@ interface ScanState {
 
 export interface ScannerOptions {
   archiveTool?: ArchiveTool;
+  onProgress?: (progress: { filesScanned: number; totalFiles: number }) => void;
 }
 
 function mergeLimits(overrides?: Partial<ScanLimits>): ScanLimits {
@@ -303,7 +304,10 @@ export async function scanSourceRoots(
   for (const requestedRoot of distinctRoots) {
     const root = await realpath(requestedRoot);
     if (!(await stat(root)).isDirectory()) throw new Error(`Source root is not a directory: ${requestedRoot}`);
-    for (const path of await enumerateFiles(root)) {
+    const files = await enumerateFiles(root);
+    let filesScanned = 0;
+    options.onProgress?.({ filesScanned, totalFiles: files.length });
+    for (const path of files) {
       const resolvedPath = await realpath(path);
       const relativePath = relative(root, resolvedPath);
       if (relativePath === ".." || relativePath.startsWith(`..${sep}`)) {
@@ -311,6 +315,8 @@ export async function scanSourceRoots(
         continue;
       }
       await inspectRootFile(resolvedPath, relativePath, limits, state, archiveTool);
+      filesScanned += 1;
+      options.onProgress?.({ filesScanned, totalFiles: files.length });
     }
   }
   return state.result;

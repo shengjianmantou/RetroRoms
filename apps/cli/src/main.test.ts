@@ -19,6 +19,10 @@ test("parses DAT system overrides", () => {
   assert.equal(parseArguments(["--source", "/one", "--processed", "/library", "--dat", "/set.xml", "--dat-system", "/set.xml=snes"]).datSystems["/set.xml"], "snes");
 });
 
+test("parses a native scan progress file", () => {
+  assert.equal(parseArguments(["--source", "/one", "--processed", "/library", "--progress-file", "/tmp/progress.json"]).progressFile, "/tmp/progress.json");
+});
+
 test("requires source and processed locations", () => {
   assert.throws(() => parseArguments(["--source", "/one"]), /Usage:/);
   assert.throws(() => parseArguments(["--processed", "/library"]), /Usage:/);

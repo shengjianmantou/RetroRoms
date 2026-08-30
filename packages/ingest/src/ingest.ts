@@ -104,7 +104,7 @@ export async function ingestLibrary(request: IngestRequest): Promise<IngestSumma
 
     const processedRoms = join(resolvedProcessedRoot, "roms");
     if (await directoryExists(processedRoms)) {
-      const result = await scanSourceRoots([processedRoms], request.limits, request.scannerOptions);
+      const result = await scanSourceRoots([processedRoms], request.limits, { ...request.scannerOptions, onProgress: undefined });
       warnings.push(...result.warnings);
       scannedContentCount += result.content.length;
       for (const content of result.content) {
