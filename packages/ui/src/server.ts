@@ -51,24 +51,43 @@ function artworkDirectory(libraryPath: string): string {
   return join(processedRootFor(libraryPath), ".rom-curator", "artwork");
 }
 
+function artworkSettingsPath(libraryPath: string): string {
+  return join(processedRootFor(libraryPath), ".rom-curator", "settings.json");
+}
+
+interface ArtworkSettings { theGamesDbApiKey?: string }
+
+async function artworkSettings(libraryPath: string): Promise<ArtworkSettings> {
+  try { return JSON.parse(await readFile(artworkSettingsPath(libraryPath), "utf8")) as ArtworkSettings; } catch { return {}; }
+}
+
+async function saveArtworkSettings(libraryPath: string, settings: ArtworkSettings): Promise<void> {
+  await mkdir(dirname(artworkSettingsPath(libraryPath)), { recursive: true });
+  await writeFile(artworkSettingsPath(libraryPath), JSON.stringify(settings, null, 2), { mode: 0o600 });
+}
+
 async function scrapeArtwork(title: string, sha256: string, libraryPath: string): Promise<{ status: string; message?: string }> {
-  const query = new URL("https://en.wikipedia.org/w/api.php");
-  query.searchParams.set("action", "query");
-  query.searchParams.set("generator", "search");
-  query.searchParams.set("gsrsearch", `${title} video game cover`);
-  query.searchParams.set("gsrnamespace", "6");
-  query.searchParams.set("gsrlimit", "1");
-  query.searchParams.set("prop", "imageinfo");
-  query.searchParams.set("iiprop", "url");
-  query.searchParams.set("iiurlwidth", "480");
-  query.searchParams.set("format", "json");
-  query.searchParams.set("origin", "*");
-  const response = await fetch(query, { headers: { "user-agent": "RetroRoms local artwork curator" } });
-  if (!response.ok) return { status: "failed", message: `Artwork search returned ${response.status}` };
-  const data = await response.json() as { query?: { pages?: Record<string, { imageinfo?: Array<{ thumburl?: string; url?: string }> }> } };
-  const image = Object.values(data.query?.pages ?? {}).flatMap((page) => page.imageinfo ?? [])[0];
-  const imageUrl = image?.thumburl ?? image?.url;
-  if (!imageUrl) return { status: "not-found", message: "No public artwork match found" };
+  const { theGamesDbApiKey } = await artworkSettings(libraryPath);
+  if (!theGamesDbApiKey) return { status: "not-configured", message: "Add a TheGamesDB API key in Artwork settings first" };
+  const search = new URL("https://api.thegamesdb.net/v1/Games/ByGameName");
+  search.searchParams.set("apikey", theGamesDbApiKey);
+  search.searchParams.set("name", title);
+  const searchResponse = await fetch(search, { headers: { "user-agent": "RetroRoms local artwork curator" } });
+  if (!searchResponse.ok) return { status: "failed", message: `TheGamesDB search returned ${searchResponse.status}` };
+  const searchData = await searchResponse.json() as { success?: boolean; data?: { games?: Array<{ id?: number }> }; error?: string };
+  const gameId = searchData.data?.games?.[0]?.id;
+  if (!gameId) return { status: "not-found", message: searchData.error || "No TheGamesDB game match found" };
+  const images = new URL("https://api.thegamesdb.net/v1/Games/Images");
+  images.searchParams.set("apikey", theGamesDbApiKey);
+  images.searchParams.set("games_id", String(gameId));
+  const imageResponseData = await fetch(images, { headers: { "user-agent": "RetroRoms local artwork curator" } });
+  if (!imageResponseData.ok) return { status: "failed", message: `TheGamesDB artwork request returned ${imageResponseData.status}` };
+  const imageData = await imageResponseData.json() as { data?: { base_url?: { original?: string; medium?: string }; images?: Record<string, Array<{ type?: string; side?: string; filename?: string }>> }; error?: string };
+  const image = imageData.data?.images?.[String(gameId)]?.find((candidate) => candidate.type === "boxart" && candidate.side === "front")
+    ?? imageData.data?.images?.[String(gameId)]?.find((candidate) => candidate.type === "boxart");
+  const baseUrl = imageData.data?.base_url?.medium ?? imageData.data?.base_url?.original;
+  const imageUrl = image?.filename && baseUrl ? new URL(image.filename, baseUrl).toString() : undefined;
+  if (!imageUrl) return { status: "not-found", message: imageData.error || "No TheGamesDB box art found" };
   const imageResponse = await fetch(imageUrl, { headers: { "user-agent": "RetroRoms local artwork curator" } });
   if (!imageResponse.ok) return { status: "failed", message: `Artwork download returned ${imageResponse.status}` };
   const bytes = Buffer.from(await imageResponse.arrayBuffer());
@@ -117,6 +136,28 @@ export async function createUiServer(options: UiServerOptions) {
     }
     if (request.method === "GET" && url.pathname === "/api/warnings") {
       json(response, { warnings: catalog.listScanWarnings(url.searchParams.get("scan") ?? undefined) });
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/artwork/settings") {
+      const settings = await artworkSettings(options.libraryPath);
+      json(response, { provider: "thegamesdb", configured: Boolean(settings.theGamesDbApiKey) });
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/artwork/settings") {
+      let body = "";
+      for await (const chunk of request) {
+        body += chunk;
+        if (body.length > 20_000) { json(response, { error: "request too large" }, 413); return; }
+      }
+      try {
+        const payload = JSON.parse(body) as { theGamesDbApiKey?: string };
+        const key = payload.theGamesDbApiKey?.trim();
+        if (!key) throw new Error("TheGamesDB API key is required");
+        await saveArtworkSettings(options.libraryPath, { theGamesDbApiKey: key });
+        json(response, { provider: "thegamesdb", configured: true });
+      } catch (error) {
+        json(response, { error: error instanceof Error ? error.message : String(error) }, 400);
+      }
       return;
     }
     const artworkMatch = url.pathname.match(/^\/api\/artwork\/([a-f0-9]{64})$/);

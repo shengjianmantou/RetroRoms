@@ -27,6 +27,12 @@ test("serves catalog observations and export previews", async () => {
   assert.equal(scans.scans[0]?.status, "completed");
   const warnings = await (await fetch(`http://127.0.0.1:${port}/api/warnings`)).json() as { warnings: unknown[] };
   assert.equal(warnings.warnings.length, 0);
+  const artworkBefore = await (await fetch(`http://127.0.0.1:${port}/api/artwork/settings`)).json() as { configured: boolean };
+  assert.equal(artworkBefore.configured, false);
+  const artworkSaved = await (await fetch(`http://127.0.0.1:${port}/api/artwork/settings`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ theGamesDbApiKey: "local-test-key" }) })).json() as { configured: boolean };
+  assert.equal(artworkSaved.configured, true);
+  const artworkAfter = await (await fetch(`http://127.0.0.1:${port}/api/artwork/settings`)).json() as { configured: boolean };
+  assert.equal(artworkAfter.configured, true);
   const scrape = await (await fetch(`http://127.0.0.1:${port}/api/artwork/scrape`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids: [] }) })).json() as { results: unknown[] };
   assert.equal(scrape.results.length, 0);
   const profilePreview = await (await fetch(`http://127.0.0.1:${port}/api/export-preview`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids: [observations.observations[0].id], profiles: { unknown: { outputPolicy: "uncompressed" } } }) })).json() as { plan: Array<{ outputFormat: string }> };
